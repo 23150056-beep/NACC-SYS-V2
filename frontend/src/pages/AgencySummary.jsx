@@ -4,7 +4,7 @@ import api from '../api/client';
 import { Card, StatCard, Button, Badge, Icon, PAGE } from '../ui';
 
 const RANGES = ['weekly', 'monthly', 'yearly'];
-const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [], terminations_by_reason: {}, pending_pre_assessments: 0 };
+const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [], terminations_by_reason: {}, pending_pre_assessments: 0, caseload_per_psychologist: [] };
 
 export default function AgencySummary() {
   const [range, setRange] = useState('monthly');
@@ -88,21 +88,27 @@ export default function AgencySummary() {
         )}
       </Card>
 
-      <Card eyebrow="Clinical team" title="Per-psychologist activity" padding="0">
+      <Card eyebrow="Clinical team" title="Per-psychologist activity & caseload" padding="0">
         <div className="racco-scroll" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
             <thead><tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-              {['Psychologist', 'Sessions'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{h}</th>)}
+              {['Psychologist', 'Sessions (period)', 'Active caseload'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{h}</th>)}
             </tr></thead>
             <tbody>
-              {d.per_psychologist.length === 0 ? (
-                <tr><td colSpan={2} style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>No sessions in this period.</td></tr>
-              ) : d.per_psychologist.map((p) => (
-                <tr key={p.name} style={{ borderBottom: '1px solid var(--ink-100)' }}>
-                  <td style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{p.name}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-body)' }}>{p.count}</td>
-                </tr>
-              ))}
+              {(() => {
+                const names = [...new Set([
+                  ...d.per_psychologist.map((p) => p.name),
+                  ...(d.caseload_per_psychologist || []).map((p) => p.name),
+                ])];
+                if (names.length === 0) return <tr><td colSpan={3} style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>No activity in this period.</td></tr>;
+                return names.map((name) => (
+                  <tr key={name} style={{ borderBottom: '1px solid var(--ink-100)' }}>
+                    <td style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{name}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-body)' }}>{d.per_psychologist.find((p) => p.name === name)?.count || 0}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-body)' }}>{(d.caseload_per_psychologist || []).find((p) => p.name === name)?.caseload || 0}</td>
+                  </tr>
+                ));
+              })()}
             </tbody>
           </table>
         </div>

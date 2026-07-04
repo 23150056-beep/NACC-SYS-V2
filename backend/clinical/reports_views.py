@@ -177,6 +177,18 @@ class SummaryReportView(generics.GenericAPIView):
         data["terminations_by_reason"] = by_reason
         data["pending_pre_assessments"] = (PreAssessment.objects
                                            .exclude(status=PreAssessment.COMPLETED).count())
+        # Per-psychologist active caseload (children assigned).
+        caseload = {}
+        for c in (Child.objects.filter(status=Child.ACTIVE)
+                  .select_related("assigned_psychologist")):
+            if not c.assigned_psychologist_id:
+                continue
+            name = (getattr(c.assigned_psychologist, "fullname", "")
+                    or getattr(c.assigned_psychologist, "username", ""))
+            caseload[name] = caseload.get(name, 0) + 1
+        data["caseload_per_psychologist"] = [
+            {"name": k, "caseload": v}
+            for k, v in sorted(caseload.items(), key=lambda kv: -kv[1])]
 
         # NB: `format` is reserved by DRF content negotiation, so use `export`.
         if request.query_params.get("export") == "csv":
@@ -185,28 +197,104 @@ class SummaryReportView(generics.GenericAPIView):
 
 
 class DashboardView(generics.GenericAPIView):
-    """Interim dashboard stats (full census dashboard lands with scheduling):
-    child counts, session trend, case mix — role-scoped."""
+    """Census Dashboard (athena pattern): census counts, today's schedule
+    strip, availability at a glance, intake vs termination trend, pending
+    pre-assessments, deterministic care-gap alerts — all role-scoped."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from django.utils import timezone as tz
+        from clinical.care_gaps import compute_alerts
+        from scheduling.models import Appointment, AvailabilityBlock
+
         role = _role(request)
         rng = request.query_params.get("range", "monthly")
-        children = Child.objects.exclude(status=Child.INACTIVE)
+
+        scoped_children = Child.objects.all()
         pas = (PreAssessment.objects.filter(status=PreAssessment.COMPLETED)
                .select_related("child", "psychologist"))
+        appts_today = (Appointment.objects
+                       .filter(start__date=tz.localdate())
+                       .exclude(status=Appointment.CANCELLED)
+                       .select_related("child", "psychologist").order_by("start"))
+        pending = PreAssessment.objects.exclude(status=PreAssessment.COMPLETED)
+        blocks = AvailabilityBlock.objects.filter(active=True).select_related("psychologist")
         if role == Role.PSYCHOLOGIST:
-            children = children.filter(assigned_psychologist=request.user)
+            scoped_children = scoped_children.filter(assigned_psychologist=request.user)
             pas = pas.filter(child__assigned_psychologist=request.user)
+            appts_today = appts_today.filter(psychologist=request.user)
+            pending = pending.filter(child__assigned_psychologist=request.user)
+            blocks = blocks.filter(psychologist=request.user)
         pas = list(pas.order_by("date", "id"))
 
-        assessed_children = {p.child_id for p in pas}
-        total = children.count()
+        active = scoped_children.filter(status=Child.ACTIVE)
+        inactive_count = scoped_children.filter(status=Child.INACTIVE).count()
+
+        # Census: ACTIVE children per case type (the interview's
+        # "active/adoption, active/foster care" view).
+        census_by_case_type = {}
+        for c in active:
+            ct = c.case_type or "Unspecified"
+            census_by_case_type[ct] = census_by_case_type.get(ct, 0) + 1
+
+        # Intake vs termination trend (monthly, last 6 buckets).
+        intake, term = {}, {}
+        for c in scoped_children:
+            b = reports.bucket(c.created_at.date(), "monthly")
+            intake[b] = intake.get(b, 0) + 1
+        term_qs = TerminationRecord.objects.all()
+        if role == Role.PSYCHOLOGIST:
+            term_qs = term_qs.filter(child__assigned_psychologist=request.user)
+        for t in term_qs:
+            b = reports.bucket(t.date, "monthly")
+            term[b] = term.get(b, 0) + 1
+        months = sorted(set(intake) | set(term))[-6:]
+        intake_vs_termination = [
+            {"bucket": m, "intake": intake.get(m, 0), "terminations": term.get(m, 0)}
+            for m in months]
+
+        today_weekday = tz.localdate().weekday()
+        availability_today = [{
+            "psychologist": (getattr(b.psychologist, "fullname", "")
+                             or getattr(b.psychologist, "username", "")),
+            "start": str(b.start_time)[:5], "end": str(b.end_time)[:5],
+            "capacity": b.capacity,
+        } for b in blocks
+            if (b.date == tz.localdate()) or (b.date is None and b.weekday == today_weekday)]
+
+        def age(c):
+            if not c.birth_date:
+                return None
+            days = (tz.localdate() - c.birth_date).days
+            return max(0, days // 365)
+
+        schedule_strip = [{
+            "id": a.id,
+            "child_id": a.child_id,
+            "child_name": a.child.fullname,
+            "age": age(a.child),
+            "time": tz.localtime(a.start).strftime("%H:%M"),
+            "purpose": a.purpose,
+            "status": a.status,
+            "psychologist": (getattr(a.psychologist, "fullname", "")
+                             or getattr(a.psychologist, "username", "")),
+        } for a in appts_today]
+
         agg = reports.summary(pas, rng)
         return Response({
-            "total_children": total,
-            "unassessed": max(0, total - len(assessed_children)),
+            "census": {
+                "active": active.count(),
+                "inactive": inactive_count,
+                "by_case_type": census_by_case_type,
+            },
+            "total_children": active.count(),
+            "unassessed": max(0, active.count() - len({p.child_id for p in pas})),
+            "pending_pre_assessments": pending.count(),
+            "today_schedule": schedule_strip,
+            "availability_today": availability_today,
+            "intake_vs_termination": intake_vs_termination,
             "trend": agg["trend"][-6:],
             "per_psychologist": agg["per_psychologist"],
             "by_case_type": agg["by_case_type"],
+            "care_gaps": compute_alerts(scoped_children),
         })
