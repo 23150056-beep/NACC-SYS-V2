@@ -4,14 +4,26 @@
 // These are sensible starters drawn from the existing seed data and RACCO I's
 // region (La Union). Replace the contents of each list with the official,
 // company-approved values once the business-process interview is complete.
-// Adviser note: "Adoption" is intentionally excluded here and handled separately.
+// V2: "Adoption" included per the psychologist interview ("active/adoption,
+// active/foster care"); final list pending RACCO I confirmation.
 
 export const CASE_TYPES = [
+  'Adoption',
   'Foster Care',
   'Kinship Care',
   'Residential Care',
   'Family Tracing & Reunification',
   'Independent Living',
+];
+
+// Termination reason categories (must match backend TerminationRecord.REASON_CHOICES).
+export const TERMINATION_REASONS = [
+  'Reunified with family',
+  'Adoption finalized',
+  'Transferred to another agency',
+  'Aged out of program',
+  'Services completed',
+  'Other',
 ];
 
 // Adviser: record who surrendered the child to NACC/RACCO I.

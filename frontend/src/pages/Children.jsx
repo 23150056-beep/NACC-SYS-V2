@@ -3,17 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useActivity } from '../context/ActivityContext';
-import { Card, Button, Badge, Input, Select, FormField, Avatar, SeverityBadge, Alert, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
+import { Card, Button, Badge, Input, Select, FormField, Avatar, Alert, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
-import { CASE_TYPES, SURRENDERED_BY, PROVINCES, MUNICIPALITIES, BARANGAYS } from '../config/caseData';
+import { CASE_TYPES, SURRENDERED_BY, TERMINATION_REASONS, PROVINCES, MUNICIPALITIES, BARANGAYS } from '../config/caseData';
 
-// NOTE: clinical severity is not yet tracked on the backend (Child.status is the
-// active/archived soft-delete flag). Until assessments are wired, we derive a
-// stable placeholder severity from the record id so the design's triage filters
-// and badges remain meaningful in the demo.
-function deriveSeverity(id) {
-  return ['standard', 'moderate', 'high'][(Number(id) * 7) % 3];
-}
 function ageFrom(birth) {
   if (!birth) return null;
   const d = new Date(birth);
@@ -32,24 +25,38 @@ function caseRef(id) {
   return `C-${String(id).padStart(4, '0')}`;
 }
 
-const EMPTY = { fullname: '', birth_date: '', gender: '', province: '', municipality: '', barangay: '', case_type: '', surrendered_by: '', psychologist: '', assignee_sees_history: true };
+// V2 status chip: `Active · Foster Care` / `Inactive (Terminated)`.
+function StatusChip({ child, size = 'sm' }) {
+  if (child.status === 'inactive') return <Badge tone="neutral" size={size} dot>Inactive (Terminated)</Badge>;
+  return <Badge tone="success" size={size} dot>Active{child.case_type ? ` · ${child.case_type}` : ''}</Badge>;
+}
+
+const EMPTY = {
+  fullname: '', birth_date: '', gender: '', province: '', municipality: '', barangay: '',
+  case_type: '', surrendered_by: '', psychologist: '', assignee_sees_history: true,
+  referral_source: '', referral_reason: '', education_level: '', current_placement: '', medical_notes: '',
+};
 
 export default function Children() {
   const { user } = useAuth();
   const { refresh: refreshActivity } = useActivity();
   const toast = useToast();
   const canManage = ['Administrator', 'Staff'].includes(user?.role_name);
+  const isAdmin = user?.role_name === 'Administrator';
+  const isPsych = user?.role_name === 'Psychologist';
   const [children, setChildren] = useState([]);
   const [psychologists, setPsychologists] = useState([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const q = searchParams.get('q') || '';
-  const [status, setStatus] = useState('all');
+  const [status, setStatus] = useState('active');
   const [sel, setSel] = useState(null); // detail drawer record
   const [form, setForm] = useState(null); // add/edit drawer
+  const [terminating, setTerminating] = useState(null); // terminate modal record
   const [error, setError] = useState('');
 
   const load = () => {
-    api.get('/children/').then((r) => setChildren(r.data));
+    // Include inactive (terminated) cases — the V2 roster shows them with chips.
+    api.get('/children/?include_archived=true').then((r) => setChildren(r.data));
     // Active psychologists + current caseload (admin/staff endpoint — also lets Staff assign).
     api.get('/psychologists/').then((r) => setPsychologists(r.data)).catch(() => {});
   };
@@ -59,27 +66,30 @@ export default function Children() {
 
   const rows = useMemo(() => children.map((c) => ({
     ...c,
-    severity: deriveSeverity(c.id),
     age: ageFrom(c.birth_date),
     group: ageGroup(ageFrom(c.birth_date)),
     ref: caseRef(c.id),
   })), [children]);
 
-  const counts = { all: rows.length, high: 0, moderate: 0, standard: 0 };
-  rows.forEach((c) => { counts[c.severity] = (counts[c.severity] || 0) + 1; });
+  const counts = { all: rows.length, active: 0, inactive: 0 };
+  rows.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
 
   // Adviser: improve alphabetical sorting throughout the system.
   const visible = rows
     .filter((c) => c.fullname.toLowerCase().includes(q.toLowerCase()) || c.ref.toLowerCase().includes(q.toLowerCase()))
-    .filter((c) => status === 'all' || c.severity === status)
+    .filter((c) => status === 'all' || c.status === status)
     .sort((a, b) => a.fullname.localeCompare(b.fullname, undefined, { sensitivity: 'base' }));
 
   const STATUS_FILTERS = [
-    { key: 'all', label: 'All' }, { key: 'high', label: 'High' },
-    { key: 'moderate', label: 'Moderate' }, { key: 'standard', label: 'Standard' },
+    { key: 'active', label: 'Active' },
+    { key: 'inactive', label: 'Inactive' },
+    { key: 'all', label: 'All' },
   ];
-  const dotColor = { high: 'var(--red-500)', moderate: 'var(--amber-500)', standard: 'var(--success-500)' };
+  const dotColor = { active: 'var(--success-500)', inactive: 'var(--text-faint)' };
   const td = { padding: '11px 16px', fontSize: 13, color: 'var(--text-body)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+
+  const canTerminate = (c) => c.status === 'active'
+    && (isAdmin || (isPsych && String(c.psychologist) === String(user?.id)));
 
   const openCreate = () => { setError(''); setForm({ ...EMPTY }); };
   const openEdit = (c) => { setError(''); setForm({ ...EMPTY, ...c, psychologist: c.psychologist || '', _origPsychologist: c.psychologist || '' }); };
@@ -88,7 +98,9 @@ export default function Children() {
     e.preventDefault();
     setError('');
     const payload = { ...form };
-    delete payload.severity; delete payload.age; delete payload.group; delete payload.ref; delete payload.psychologist_name; delete payload.guardian_name; delete payload._origPsychologist;
+    delete payload.age; delete payload.group; delete payload.ref;
+    delete payload.psychologist_name; delete payload.guardian_name;
+    delete payload._origPsychologist; delete payload.termination; delete payload.photo;
     if (!payload.psychologist) payload.psychologist = null;
     if (!payload.birth_date) delete payload.birth_date;
     try {
@@ -104,16 +116,17 @@ export default function Children() {
     }
   };
 
-  const archive = async (c) => {
-    if (!window.confirm(`Archive ${c.fullname}?`)) return;
+  const terminate = async (c, reason, note) => {
     try {
-      await api.post(`/children/${c.id}/archive/`);
-      toast.success(`${c.fullname} archived`);
+      await api.post(`/children/${c.id}/terminate/`, { reason_category: reason, note });
+      toast.success(`${c.fullname}'s case is now inactive`);
+      setTerminating(null);
       setSel(null);
       load();
       refreshActivity();
     } catch (err) {
-      toast.error('Could not archive the record.');
+      const d = err.response?.data;
+      toast.error(d?.note || d?.reason_category || d?.detail || 'Could not terminate the case.');
     }
   };
 
@@ -166,7 +179,7 @@ export default function Children() {
             <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                  {['Child', 'Gender / Age', 'Case Type', 'Psychologist', 'Status', canManage ? 'Actions' : ''].filter(Boolean).map((h) => (
+                  {['Child', 'Gender / Age', 'Psychologist', 'Status', (canManage || isPsych) ? 'Actions' : ''].filter(Boolean).map((h) => (
                     <th key={h} scope="col" style={{ textAlign: 'left', padding: '11px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -175,7 +188,7 @@ export default function Children() {
                 {visible.map((c) => (
                   <tr key={c.id} tabIndex={0} role="button" aria-label={`${c.fullname}, case ${c.ref}. Open details.`}
                     onClick={() => setSel(c)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(c); } }}
-                    style={{ borderBottom: '1px solid var(--ink-100)', cursor: 'pointer', transition: 'background var(--dur-fast) var(--ease-out)' }}
+                    style={{ borderBottom: '1px solid var(--ink-100)', cursor: 'pointer', transition: 'background var(--dur-fast) var(--ease-out)', opacity: c.status === 'inactive' ? 0.72 : 1 }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                     <td style={{ padding: '11px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
@@ -187,11 +200,10 @@ export default function Children() {
                       </div>
                     </td>
                     <td style={td}>{c.gender || '—'} {c.age != null ? `· ${c.age} (${c.group})` : ''}</td>
-                    <td style={td}>{c.case_type || '—'}</td>
                     <td style={td}>
                       {c.psychologist_name
                         ? c.psychologist_name
-                        : canManage
+                        : canManage && c.status === 'active'
                           ? (
                             <button title={`Assign a psychologist to ${c.fullname}`} aria-label={`Assign psychologist to ${c.fullname}`}
                               onClick={(e) => { e.stopPropagation(); openEdit(c); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })}
@@ -201,12 +213,12 @@ export default function Children() {
                           )
                           : '—'}
                     </td>
-                    <td style={{ padding: '11px 16px' }}><SeverityBadge level={c.severity} size="sm" /></td>
-                    {canManage && (
+                    <td style={{ padding: '11px 16px' }}><StatusChip child={c} /></td>
+                    {(canManage || isPsych) && (
                       <td style={{ padding: '11px 16px' }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button title="Edit record" aria-label={`Edit ${c.fullname}`} onClick={() => openEdit(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
-                          <button title="Archive record" aria-label={`Archive ${c.fullname}`} onClick={() => archive(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="archive" size={15} /></button>
+                          {canManage && <button title="Edit record" aria-label={`Edit ${c.fullname}`} onClick={() => openEdit(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>}
+                          {canTerminate(c) && <button title="Terminate / archive case" aria-label={`Terminate ${c.fullname}'s case`} onClick={() => setTerminating(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="archive" size={15} /></button>}
                         </div>
                       </td>
                     )}
@@ -218,13 +230,14 @@ export default function Children() {
         )}
       </Card>
 
-      {sel && <ChildDrawer child={sel} canManage={canManage} onEdit={() => { openEdit(sel); setSel(null); }} onArchive={() => archive(sel)} onClose={() => setSel(null)} />}
+      {sel && <ChildDrawer child={sel} canManage={canManage} canTerminate={canTerminate(sel)} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onClose={() => setSel(null)} />}
       {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} error={error} onSubmit={save} onClose={() => setForm(null)} />}
+      {terminating && <TerminateModal child={terminating} onConfirm={terminate} onClose={() => setTerminating(null)} />}
     </div>
   );
 }
 
-function ChildDrawer({ child, canManage, onEdit, onArchive, onClose }) {
+function ChildDrawer({ child, canManage, canTerminate, onEdit, onTerminate, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -238,6 +251,9 @@ function ChildDrawer({ child, canManage, onEdit, onArchive, onClose }) {
     ['Assigned Psychologist', child.psychologist_name || '—'],
     ['Surrendered By', child.surrendered_by || '—'],
     ['Location', location],
+    ['Referral Source', child.referral_source || '—'],
+    ['Education Level', child.education_level || '—'],
+    ['Current Placement', child.current_placement || '—'],
   ];
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 60, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
@@ -253,20 +269,78 @@ function ChildDrawer({ child, canManage, onEdit, onArchive, onClose }) {
           <button onClick={onClose} aria-label="Close panel" title="Close" {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="x" size={17} /></button>
         </div>
         <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><SeverityBadge level={child.severity} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><StatusChip child={child} size="md" /></div>
+          {child.status === 'inactive' && child.termination && (
+            <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
+              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Termination</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>{child.termination.reason_category}</div>
+              <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: '4px 0 0', lineHeight: 1.5 }}>{child.termination.note}</p>
+              <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>
+                {child.termination.date}{child.termination.terminated_by ? ` · by ${child.termination.terminated_by}` : ''}
+              </div>
+            </div>
+          )}
           {fields.map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 12, borderBottom: '1px solid var(--ink-100)' }}>
               <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
               <span style={{ fontSize: 13.5, color: 'var(--text-strong)', fontWeight: 700, textAlign: 'right' }}>{v}</span>
             </div>
           ))}
+          {child.referral_reason && (
+            <div>
+              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Referral reason</div>
+              <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.referral_reason}</p>
+            </div>
+          )}
+          {child.medical_notes && (
+            <div>
+              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Medical notes</div>
+              <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.medical_notes}</p>
+            </div>
+          )}
         </div>
-        {canManage && (
+        {(canManage || canTerminate) && (
           <div style={{ padding: 16, borderTop: '1px solid var(--border)', display: 'flex', gap: 10 }}>
-            <Button variant="secondary" fullWidth onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>
-            <Button variant="danger" fullWidth onClick={onArchive} iconLeft={<Icon name="archive" size={16} />}>Archive</Button>
+            {canManage && <Button variant="secondary" fullWidth onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>}
+            {canTerminate && <Button variant="danger" fullWidth onClick={onTerminate} iconLeft={<Icon name="archive" size={16} />}>Terminate Case</Button>}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function TerminateModal({ child, onConfirm, onClose }) {
+  const [reason, setReason] = useState('');
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 80, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
+      <div role="dialog" aria-modal="true" aria-label={`Terminate ${child.fullname}'s case`} onClick={(e) => e.stopPropagation()} style={{ width: 460, maxWidth: '92%', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Terminate case — {child.fullname}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4 }}>
+            The record becomes <strong>Inactive (Terminated)</strong> and is archived from active caseloads. A reason is required.
+          </div>
+        </div>
+        <FormField label="Reason" required>
+          <Select value={reason} onChange={(e) => setReason(e.target.value)}>
+            <option value="">— Select termination reason —</option>
+            {TERMINATION_REASONS.map((r) => <option key={r}>{r}</option>)}
+          </Select>
+        </FormField>
+        <FormField label="Reason note" required>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} placeholder="Describe why this case is being terminated…"
+            style={{ width: '100%', resize: 'vertical', padding: '11px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 14, lineHeight: 1.55 }} />
+        </FormField>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Button variant="secondary" fullWidth onClick={onClose}>Cancel</Button>
+          <Button variant="danger" fullWidth disabled={!reason || !note.trim()} onClick={() => onConfirm(child, reason, note.trim())} iconLeft={<Icon name="archive" size={16} />}>Terminate</Button>
+        </div>
       </div>
     </div>
   );
@@ -283,6 +357,7 @@ function ChildForm({ form, setForm, psychologists, error, onSubmit, onClose }) {
   const munis = MUNICIPALITIES[form.province] || [];
   const brgys = BARANGAYS[form.municipality] || [];
   const fieldLabel = { fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 };
+  const textarea = { width: '100%', resize: 'vertical', padding: '10px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 14, lineHeight: 1.5 };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 70, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
       <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()} style={{ width: 420, maxWidth: '92%', height: '100%', background: 'var(--surface)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column', animation: 'racco-slide-left var(--dur-slow) var(--ease-out)' }}>
@@ -345,6 +420,24 @@ function ChildForm({ form, setForm, psychologists, error, onSubmit, onClose }) {
               {SURRENDERED_BY.map((s) => <option key={s}>{s}</option>)}
             </Select>
           </FormField>
+
+          <div className="racco-eyebrow" style={{ fontSize: 10, marginTop: 4 }}>Profiling</div>
+          <FormField label="Referral Source" hint="Agency, LGU, or person who referred the child.">
+            <Input value={form.referral_source || ''} onChange={(e) => setForm({ ...form, referral_source: e.target.value })} />
+          </FormField>
+          <FormField label="Referral Reason">
+            <textarea value={form.referral_reason || ''} onChange={(e) => setForm({ ...form, referral_reason: e.target.value })} rows={3} style={textarea} />
+          </FormField>
+          <FormField label="Education Level">
+            <Input value={form.education_level || ''} onChange={(e) => setForm({ ...form, education_level: e.target.value })} placeholder="e.g. Grade 4" />
+          </FormField>
+          <FormField label="Current Placement">
+            <Input value={form.current_placement || ''} onChange={(e) => setForm({ ...form, current_placement: e.target.value })} placeholder="e.g. Foster family, residential facility" />
+          </FormField>
+          <FormField label="Medical Notes">
+            <textarea value={form.medical_notes || ''} onChange={(e) => setForm({ ...form, medical_notes: e.target.value })} rows={3} style={textarea} />
+          </FormField>
+
           <FormField label="Assign Psychologist">
             <Select value={form.psychologist || ''} onChange={(e) => setForm({ ...form, psychologist: e.target.value })}>
               <option value="">— Unassigned —</option>
@@ -355,7 +448,7 @@ function ChildForm({ form, setForm, psychologists, error, onSubmit, onClose }) {
             <div style={{ padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)' }}>
               <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12.5, color: 'var(--text-strong)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.assignee_sees_history !== false} onChange={(e) => setForm({ ...form, assignee_sees_history: e.target.checked })} style={{ marginTop: 2, accentColor: 'var(--blue-600)' }} />
-                <span>Carry this child&apos;s assessment history to the new psychologist (they&apos;ll see prior assessments). Uncheck to give them a fresh start.</span>
+                <span>Carry this child&apos;s session history to the new psychologist (they&apos;ll see prior records). Uncheck to give them a fresh start.</span>
               </label>
             </div>
           )}

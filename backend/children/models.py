@@ -25,11 +25,16 @@ class Guardian(models.Model):
 
 class Child(models.Model):
     ACTIVE = "active"
-    ARCHIVED = "archived"
-    STATUS_CHOICES = [(ACTIVE, "Active"), (ARCHIVED, "Archived")]
+    INACTIVE = "inactive"
+    # Back-compat alias: v1 called the non-active state "archived"; V2 renames it
+    # to inactive (a terminated/archived case) without touching shared code paths.
+    ARCHIVED = INACTIVE
+    STATUS_CHOICES = [(ACTIVE, "Active"), (INACTIVE, "Inactive")]
 
-    # Adviser-approved case types (Adoption handled separately, not listed here).
+    # V2 case types per the psychologist interview ("active/adoption,
+    # active/foster care"). Final list pending RACCO I confirmation.
     CASE_TYPE_CHOICES = [
+        ("Adoption", "Adoption"),
         ("Foster Care", "Foster Care"),
         ("Kinship Care", "Kinship Care"),
         ("Residential Care", "Residential Care"),
@@ -66,6 +71,13 @@ class Child(models.Model):
     case_type = models.CharField(max_length=150, blank=True, choices=CASE_TYPE_CHOICES)
     surrendered_by = models.CharField(max_length=50, blank=True, choices=SURRENDERED_BY_CHOICES)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ACTIVE)
+    # V2 profiling fields (exact list pending confirmation with the psychologist).
+    photo = models.ImageField(upload_to="children/photos/", null=True, blank=True)
+    referral_source = models.CharField(max_length=150, blank=True)
+    referral_reason = models.TextField(blank=True)
+    education_level = models.CharField(max_length=100, blank=True)
+    current_placement = models.CharField(max_length=150, blank=True)
+    medical_notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -74,6 +86,32 @@ class Child(models.Model):
 
     def __str__(self):
         return self.fullname
+
+
+class TerminationRecord(models.Model):
+    """Archive/termination of a case, always with a reason. Creating one sets
+    the child to inactive. Reason categories pending RACCO I confirmation."""
+    REASON_CHOICES = [
+        ("Reunified with family", "Reunified with family"),
+        ("Adoption finalized", "Adoption finalized"),
+        ("Transferred to another agency", "Transferred to another agency"),
+        ("Aged out of program", "Aged out of program"),
+        ("Services completed", "Services completed"),
+        ("Other", "Other"),
+    ]
+
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="terminations")
+    terminated_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="terminations_made")
+    date = models.DateField(default=timezone.localdate)
+    reason_category = models.CharField(max_length=50, choices=REASON_CHOICES)
+    note = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "tbl_termination_record"
+        ordering = ["-created_at"]
 
 
 class ProgressNote(models.Model):

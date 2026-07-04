@@ -1,12 +1,13 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from accounts.models import Role
 from accounts.permissions import RecordsAccess, ProgressRecordAccess
 from activity.models import ActivityLog
 from activity.services import log_activity
-from children.models import Guardian, Child, ProgressNote, Goal
+from children.models import Guardian, Child, ProgressNote, Goal, TerminationRecord
 from children.serializers import GuardianSerializer, ChildSerializer, ProgressNoteSerializer, GoalSerializer
 
 
@@ -54,8 +55,21 @@ class ChildViewSet(_ArchivableViewSet):
     model = Child
     serializer_class = ChildSerializer
 
+    def get_permissions(self):
+        # Terminate has its own rule (admin OR the child's assigned psychologist),
+        # enforced in the action body — RecordsAccess would block psychologists.
+        if self.action == "terminate":
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     def get_queryset(self):
-        qs = super().get_queryset()
+        # Inactive (terminated) cases stay reachable by id — the profile view
+        # shows the termination details, and terminate itself must be able to
+        # report "already inactive" rather than 404.
+        if self.action in ("retrieve", "terminate"):
+            qs = self.model.objects.all().order_by("fullname")
+        else:
+            qs = super().get_queryset()
         role = getattr(getattr(self.request.user, "role", None), "role_name", None)
         if role == Role.PSYCHOLOGIST:
             qs = qs.filter(assigned_psychologist=self.request.user)
@@ -67,6 +81,43 @@ class ChildViewSet(_ArchivableViewSet):
             self.request.user, action_name, ActivityLog.RECORD,
             entity_type="Child", entity_label=getattr(obj, "fullname", ""),
             entity_id=obj.id, recipient=obj.assigned_psychologist)
+
+    @action(detail=True, methods=["post"])
+    def terminate(self, request, pk=None):
+        """Archive a case with a required reason (V2). Sets the child inactive
+        and writes a TerminationRecord. Admin or assigned psychologist only."""
+        child = self.get_object()
+        role = getattr(getattr(request.user, "role", None), "role_name", None)
+        allowed = (role == Role.ADMINISTRATOR) or (
+            role == Role.PSYCHOLOGIST and child.assigned_psychologist_id == request.user.id)
+        if not allowed:
+            return Response({"detail": "Only the assigned psychologist or an administrator can terminate this case."},
+                            status=status.HTTP_403_FORBIDDEN)
+        if child.status == Child.INACTIVE:
+            return Response({"detail": "This case is already inactive."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        reason = request.data.get("reason_category", "")
+        note = (request.data.get("note") or "").strip()
+        valid_reasons = {c[0] for c in TerminationRecord.REASON_CHOICES}
+        if reason not in valid_reasons:
+            return Response({"reason_category": "Select a termination reason."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not note:
+            return Response({"note": "A reason note is required to terminate a case."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        record = TerminationRecord.objects.create(
+            child=child, terminated_by=request.user,
+            reason_category=reason, note=note)
+        child.status = Child.INACTIVE
+        child.save(update_fields=["status", "updated_at"])
+        self._log(child, ActivityLog.ARCHIVED)
+        return Response({
+            "status": "inactive",
+            "termination": {
+                "date": record.date, "reason_category": record.reason_category,
+                "note": record.note,
+            },
+        }, status=status.HTTP_200_OK)
 
 
 class ProgressNoteViewSet(viewsets.ModelViewSet):
