@@ -4,7 +4,7 @@ import api from '../api/client';
 import { Card, StatCard, Button, Badge, Icon, PAGE } from '../ui';
 
 const RANGES = ['weekly', 'monthly', 'yearly'];
-const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [] };
+const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [], terminations_by_reason: {}, pending_pre_assessments: 0 };
 
 export default function AgencySummary() {
   const [range, setRange] = useState('monthly');
@@ -41,9 +41,10 @@ export default function AgencySummary() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 16, marginBottom: 20 }}>
-        <StatCard label="Total Sessions" value={d.total} tone="brand" icon={<Icon name="clipboard-check" size={18} />} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 16, marginBottom: 20 }}>
+        <StatCard label="Completed Pre-Assessments" value={d.total} tone="brand" icon={<Icon name="clipboard-check" size={18} />} />
         <StatCard label="Children Seen" value={d.children} tone="success" icon={<Icon name="users" size={18} />} />
+        <StatCard label="Pending Pre-Assessments" value={d.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20, marginBottom: 20 }}>
@@ -76,6 +77,16 @@ export default function AgencySummary() {
           </div>
         </Card>
       </div>
+
+      <Card eyebrow="Case closure" title="Terminations by reason" padding="20px" style={{ marginBottom: 20 }}>
+        {Object.keys(d.terminations_by_reason || {}).length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No terminations in this period.</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {Object.entries(d.terminations_by_reason).map(([k, v]) => <Badge key={k} tone="neutral">{k} · {v}</Badge>)}
+          </div>
+        )}
+      </Card>
 
       <Card eyebrow="Clinical team" title="Per-psychologist activity" padding="0">
         <div className="racco-scroll" style={{ overflowX: 'auto' }}>

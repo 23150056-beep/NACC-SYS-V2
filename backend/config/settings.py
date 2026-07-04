@@ -30,7 +30,6 @@ INSTALLED_APPS = [
     "corsheaders",
     "accounts",
     "children",
-    "assessments",
     "clinical",
     "activity",
 ]

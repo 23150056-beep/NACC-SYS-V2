@@ -1,8 +1,16 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
 from children.models import Child
+
+
+def report_upload_path(instance, filename):
+    """UUID filenames under media/reports/ — originals keep their extension."""
+    ext = (filename.rsplit(".", 1)[-1] if "." in filename else "bin").lower()
+    return f"reports/{uuid.uuid4().hex}.{ext}"
 
 
 class InstrumentCatalog(models.Model):
@@ -158,6 +166,96 @@ class PreAssessment(models.Model):
 
     class Meta:
         db_table = "tbl_pre_assessment"
+        ordering = ["-date", "-id"]
+
+
+class PsychologicalReport(models.Model):
+    """The psychologist's own uploaded report file (each keeps her own format).
+    Text is extracted (PDF) for search and, later, AI summarization drafts."""
+    TYPE_CHOICES = [
+        ("initial", "Initial Evaluation"),
+        ("progress", "Progress Report"),
+        ("final", "Final Report"),
+        ("other", "Other"),
+    ]
+
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="psych_reports")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="psych_reports")
+    file = models.FileField(upload_to=report_upload_path)
+    original_filename = models.CharField(max_length=255, blank=True)
+    report_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="other")
+    coverage = models.CharField(max_length=150, blank=True,
+                                help_text="Session/date coverage, e.g. 'Sessions 1-3, Jan-Mar 2026'")
+    extracted_text = models.TextField(blank=True)
+    ai_summary = models.TextField(null=True, blank=True)
+    ai_summary_confirmed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "tbl_psychological_report"
+        ordering = ["-created_at"]
+
+
+class RemarkNote(models.Model):
+    """Psychological remark notes, manually added (replaces v1 session notes)."""
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="remarks")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="remarks_written")
+    date = models.DateField(default=timezone.localdate)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "tbl_remark_note"
+        ordering = ["-date", "-id"]
+
+
+class TreatmentPlan(models.Model):
+    """The psychologist's free-input treatment plan (replaces v1 goal tracker)."""
+    ACTIVE, COMPLETED, REVISED = "active", "completed", "revised"
+    STATUS_CHOICES = [(ACTIVE, "Active"), (COMPLETED, "Completed"), (REVISED, "Revised")]
+
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="treatment_plans")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="treatment_plans")
+    objectives = models.TextField()
+    interventions = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ACTIVE)
+    review_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "tbl_treatment_plan"
+        ordering = ["-created_at"]
+
+
+class ResultEntry(models.Model):
+    """Manual result entry — the psychologist's own findings for an instrument
+    administered on paper. No computed scores, ever."""
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="result_entries")
+    pre_assessment = models.ForeignKey(
+        PreAssessment, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="result_entries")
+    instrument = models.ForeignKey(
+        InstrumentCatalog, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="result_entries")
+    summary = models.TextField(help_text="Findings in the psychologist's own words")
+    classification = models.CharField(max_length=150, blank=True,
+                                      help_text="Free-text classification, the psychologist's own words")
+    date = models.DateField(default=timezone.localdate)
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="result_entries")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "tbl_result_entry"
         ordering = ["-date", "-id"]
 
 

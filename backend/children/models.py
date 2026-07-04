@@ -114,37 +114,5 @@ class TerminationRecord(models.Model):
         ordering = ["-created_at"]
 
 
-class ProgressNote(models.Model):
-    """A dated progress/session note on a child's record (Phase 2 monitoring)."""
-    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="progress_notes")
-    author = models.ForeignKey(
-        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="authored_progress_notes")
-    date = models.DateField(default=timezone.localdate)
-    text = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "tbl_progress_note"
-        ordering = ["-date", "-id"]
-
-
-class Goal(models.Model):
-    """A treatment goal on a child's record (Phase 2 monitoring)."""
-    ONGOING, MET = "ongoing", "met"
-    STATUS_CHOICES = [(ONGOING, "Ongoing"), (MET, "Met")]
-
-    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="goals")
-    author = models.ForeignKey(
-        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="authored_goals")
-    text = models.CharField(max_length=255)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=ONGOING)
-    target_date = models.DateField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "tbl_goal"
-        ordering = ["status", "-created_at"]
+# V2: v1's ProgressNote and Goal were replaced by clinical.RemarkNote and
+# clinical.TreatmentPlan per the psychologist interview.

@@ -11,12 +11,16 @@ from activity.services import log_activity
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
     ClinicalInterviewRecord, ProblemEntry, PreAssessment,
+    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry,
 )
 from clinical.serializers import (
     InstrumentCatalogSerializer, AgencyFormTemplateSerializer,
     ConsentRecordSerializer, ClinicalInterviewRecordSerializer,
     ProblemEntrySerializer, PreAssessmentSerializer,
+    PsychologicalReportSerializer, RemarkNoteSerializer,
+    TreatmentPlanSerializer, ResultEntrySerializer,
 )
+from clinical.services import extract_pdf_text
 
 
 def _role(request):
@@ -211,3 +215,57 @@ class ProblemEntryViewSet(_ChildScopedClinicalViewSet):
     model = ProblemEntry
     serializer_class = ProblemEntrySerializer
     author_field = "logged_by"
+
+
+class PsychologicalReportViewSet(_ChildScopedClinicalViewSet):
+    model = PsychologicalReport
+    serializer_class = PsychologicalReportSerializer
+    author_field = "author"
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def perform_create(self, serializer):
+        self._assert_can_write(serializer.validated_data["child"])
+        upload = serializer.validated_data["file"]
+        extracted = ""
+        if upload.name.lower().endswith(".pdf"):
+            extracted = extract_pdf_text(upload)
+        obj = serializer.save(author=self.request.user,
+                              original_filename=upload.name,
+                              extracted_text=extracted)
+        log_activity(self.request.user, ActivityLog.CREATED, ActivityLog.RECORD,
+                     entity_type="PsychologicalReport", entity_label=obj.child.fullname,
+                     entity_id=obj.id, recipient=obj.child.assigned_psychologist)
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """Authenticated file serving — MEDIA_URL is never exposed directly."""
+        from django.http import FileResponse
+        obj = self.get_object()  # queryset scoping already applied
+        try:
+            handle = obj.file.open("rb")
+        except (FileNotFoundError, ValueError):
+            return Response({"detail": "File is missing from storage."},
+                            status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(handle, as_attachment=True,
+                            filename=obj.original_filename or obj.file.name.rsplit("/", 1)[-1])
+
+
+class RemarkNoteViewSet(_ChildScopedClinicalViewSet):
+    model = RemarkNote
+    serializer_class = RemarkNoteSerializer
+    author_field = "author"
+
+
+class TreatmentPlanViewSet(_ChildScopedClinicalViewSet):
+    model = TreatmentPlan
+    serializer_class = TreatmentPlanSerializer
+    author_field = "author"
+
+
+class ResultEntryViewSet(_ChildScopedClinicalViewSet):
+    model = ResultEntry
+    serializer_class = ResultEntrySerializer
+    author_field = "entered_by"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("instrument", "entered_by", "child")

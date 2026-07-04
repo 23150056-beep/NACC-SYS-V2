@@ -39,7 +39,7 @@ export default function Monitoring() {
             <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontFamily: 'var(--font-sans)' }}>
               <thead>
                 <tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                  {['Child', 'Case Type', 'Psychologist', 'Latest Classification', 'Last Session', 'Next Session', 'Sessions'].map((h) => (
+                  {['Child', 'Case Type', 'Psychologist', 'Pre-Assessment', 'Latest Classification', 'Last Activity', 'Reports'].map((h) => (
                     <th key={h} scope="col" style={{ textAlign: 'left', padding: '11px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -60,10 +60,10 @@ export default function Monitoring() {
                       </td>
                       <td style={td}>{r.case_type || '—'}</td>
                       <td style={td}>{r.psychologist_name || '—'}</td>
+                      <td style={td}>{r.pre_assessment_status}</td>
                       <td style={td}>{r.latest_classification || '—'}</td>
-                      <td style={td}>{r.last_assessment_date || '—'}</td>
-                      <td style={td}>{r.next_session || '—'}</td>
-                      <td style={td}>{r.assessment_count}</td>
+                      <td style={td}>{r.last_activity || '—'}</td>
+                      <td style={td}>{r.report_count}</td>
                     </tr>
                   );
                 })}

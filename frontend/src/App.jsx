@@ -43,7 +43,7 @@ export default function App() {
           <Route path="/children" element={<ProtectedRoute roles={['Administrator', 'Staff', 'Psychologist']}><Shell><Children /></Shell></ProtectedRoute>} />
           <Route path="/instruments" element={<ProtectedRoute roles={INSTRUMENT_MANAGER_ROLES}><Shell><Instruments /></Shell></ProtectedRoute>} />
           <Route path="/pre-assessment" element={<ProtectedRoute roles={['Psychologist']}><Shell><PreAssessment /></Shell></ProtectedRoute>} />
-          <Route path="/report" element={<ProtectedRoute><Shell><Report /></Shell></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><Shell><Report /></Shell></ProtectedRoute>} />
           <Route path="/report/child/:id" element={<ProtectedRoute><Shell><ChildProgressReport /></Shell></ProtectedRoute>} />
           <Route path="/monitoring" element={<ProtectedRoute roles={['Administrator', 'Staff', 'Psychologist']}><Shell><Monitoring /></Shell></ProtectedRoute>} />
           <Route path="/reports/summary" element={<ProtectedRoute roles={['Administrator', 'Staff']}><Shell><AgencySummary /></Shell></ProtectedRoute>} />

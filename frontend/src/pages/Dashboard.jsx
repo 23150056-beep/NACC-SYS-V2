@@ -35,7 +35,7 @@ export default function Dashboard() {
     { label: 'Records', icon: 'folder-heart', variant: 'secondary', to: '/children', roles: ['Administrator', 'Psychologist', 'Staff'] },
     { label: 'Agency Summary', icon: 'bar-chart-3', variant: 'primary', to: '/reports/summary', roles: ['Administrator', 'Staff'] },
     { label: 'Progress Monitoring', icon: 'activity', variant: 'primary', to: '/monitoring', roles: ['Psychologist'] },
-    { label: 'View Results', icon: 'heart-pulse', variant: 'secondary', to: '/report', roles: ['Administrator', 'Psychologist', 'Staff'] },
+    { label: 'Results & Reports', icon: 'heart-pulse', variant: 'secondary', to: '/reports', roles: ['Administrator', 'Psychologist', 'Staff'] },
   ].filter((a) => a.roles.includes(role));
 
   return (

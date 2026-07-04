@@ -4,7 +4,11 @@ from django.utils import timezone
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
     ClinicalInterviewRecord, ProblemEntry, PreAssessment,
+    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry,
 )
+
+ALLOWED_REPORT_EXTENSIONS = ("pdf", "doc", "docx")
+MAX_REPORT_BYTES = 15 * 1024 * 1024
 
 
 class InstrumentCatalogSerializer(serializers.ModelSerializer):
@@ -98,6 +102,76 @@ class PreAssessmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"consent": "That consent belongs to a different child."})
         if interview and child and interview.child_id != child.id:
             raise serializers.ValidationError({"interview": "That interview belongs to a different child."})
+        return attrs
+
+
+class PsychologicalReportSerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.fullname", read_only=True)
+    author_name = serializers.CharField(source="author.fullname", read_only=True, default=None)
+    has_text = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PsychologicalReport
+        fields = ["id", "child", "child_name", "author", "author_name", "file",
+                  "original_filename", "report_type", "coverage",
+                  "ai_summary", "ai_summary_confirmed", "has_text", "created_at"]
+        read_only_fields = ["author", "original_filename", "ai_summary", "ai_summary_confirmed"]
+        extra_kwargs = {"file": {"write_only": True}}
+
+    def get_has_text(self, obj):
+        return bool(obj.extracted_text)
+
+    def validate_file(self, f):
+        ext = (f.name.rsplit(".", 1)[-1] if "." in f.name else "").lower()
+        if ext not in ALLOWED_REPORT_EXTENSIONS:
+            raise serializers.ValidationError("Upload a PDF or Word document (.pdf, .doc, .docx).")
+        if f.size > MAX_REPORT_BYTES:
+            raise serializers.ValidationError("File too large (max 15 MB).")
+        return f
+
+
+class RemarkNoteSerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.fullname", read_only=True)
+    author_name = serializers.CharField(source="author.fullname", read_only=True, default=None)
+
+    class Meta:
+        model = RemarkNote
+        fields = ["id", "child", "child_name", "author", "author_name",
+                  "date", "text", "created_at"]
+        read_only_fields = ["author"]
+
+
+class TreatmentPlanSerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.fullname", read_only=True)
+    author_name = serializers.CharField(source="author.fullname", read_only=True, default=None)
+
+    class Meta:
+        model = TreatmentPlan
+        fields = ["id", "child", "child_name", "author", "author_name",
+                  "objectives", "interventions", "status", "review_date",
+                  "created_at", "updated_at"]
+        read_only_fields = ["author"]
+
+
+class ResultEntrySerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.fullname", read_only=True)
+    child_case_type = serializers.CharField(source="child.case_type", read_only=True, default="")
+    instrument_title = serializers.CharField(source="instrument.title", read_only=True, default=None)
+    entered_by_name = serializers.CharField(source="entered_by.fullname", read_only=True, default=None)
+
+    class Meta:
+        model = ResultEntry
+        fields = ["id", "child", "child_name", "child_case_type", "pre_assessment",
+                  "instrument", "instrument_title", "summary", "classification",
+                  "date", "entered_by", "entered_by_name", "created_at"]
+        read_only_fields = ["entered_by"]
+
+    def validate(self, attrs):
+        child = attrs.get("child") or (self.instance.child if self.instance else None)
+        pa = attrs.get("pre_assessment")
+        if pa and child and pa.child_id != child.id:
+            raise serializers.ValidationError(
+                {"pre_assessment": "That pre-assessment belongs to a different child."})
         return attrs
 
 
