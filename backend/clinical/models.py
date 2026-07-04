@@ -130,6 +130,37 @@ class ClinicalInterviewRecord(models.Model):
         ordering = ["-date", "-id"]
 
 
+class PreAssessment(models.Model):
+    """The guided pre-assessment flow: consent → clinical interview →
+    instrument titles (administered on paper, offline) → problems → complete."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    STATUS_CHOICES = [(PENDING, "Pending"), (IN_PROGRESS, "In progress"), (COMPLETED, "Completed")]
+
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="pre_assessments")
+    psychologist = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="pre_assessments")
+    date = models.DateField(default=timezone.localdate)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING)
+    instruments = models.ManyToManyField(
+        InstrumentCatalog, blank=True, related_name="pre_assessments")
+    consent = models.ForeignKey(
+        ConsentRecord, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pre_assessments")
+    interview = models.ForeignKey(
+        ClinicalInterviewRecord, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pre_assessments")
+    notes = models.TextField(blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "tbl_pre_assessment"
+        ordering = ["-date", "-id"]
+
+
 class ProblemEntry(models.Model):
     """A problem encountered in the child, logged by the psychologist."""
     child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="problems")

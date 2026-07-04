@@ -70,6 +70,7 @@ class ChildViewSet(_ArchivableViewSet):
             qs = self.model.objects.all().order_by("fullname")
         else:
             qs = super().get_queryset()
+        qs = qs.prefetch_related("pre_assessments__instruments")
         role = getattr(getattr(self.request.user, "role", None), "role_name", None)
         if role == Role.PSYCHOLOGIST:
             qs = qs.filter(assigned_psychologist=self.request.user)

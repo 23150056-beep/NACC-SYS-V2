@@ -3,7 +3,7 @@ from django.utils import timezone
 
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
-    ClinicalInterviewRecord, ProblemEntry,
+    ClinicalInterviewRecord, ProblemEntry, PreAssessment,
 )
 
 
@@ -70,6 +70,35 @@ class ClinicalInterviewRecordSerializer(serializers.ModelSerializer):
         fields = ["id", "child", "child_name", "template", "template_title",
                   "answers", "interviewer", "interviewer_name", "date", "created_at"]
         read_only_fields = ["interviewer"]
+
+
+class PreAssessmentSerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.fullname", read_only=True)
+    psychologist_name = serializers.CharField(source="psychologist.fullname", read_only=True, default=None)
+    instrument_titles = serializers.SerializerMethodField()
+    consent_status = serializers.CharField(source="consent.status", read_only=True, default=None)
+
+    class Meta:
+        model = PreAssessment
+        fields = ["id", "child", "child_name", "psychologist", "psychologist_name",
+                  "date", "status", "instruments", "instrument_titles",
+                  "consent", "consent_status", "interview", "notes",
+                  "completed_at", "created_at"]
+        read_only_fields = ["psychologist", "status", "completed_at"]
+
+    def get_instrument_titles(self, obj):
+        return [i.title for i in obj.instruments.all()]
+
+    def validate(self, attrs):
+        # Linked consent/interview must belong to the same child.
+        child = attrs.get("child") or (self.instance.child if self.instance else None)
+        consent = attrs.get("consent")
+        interview = attrs.get("interview")
+        if consent and child and consent.child_id != child.id:
+            raise serializers.ValidationError({"consent": "That consent belongs to a different child."})
+        if interview and child and interview.child_id != child.id:
+            raise serializers.ValidationError({"interview": "That interview belongs to a different child."})
+        return attrs
 
 
 class ProblemEntrySerializer(serializers.ModelSerializer):

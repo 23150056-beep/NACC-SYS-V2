@@ -26,6 +26,10 @@ class ChildSerializer(serializers.ModelSerializer):
     )
 
     termination = serializers.SerializerMethodField()
+    # Computed V2 profile surface: has the pre-assessment been answered, and
+    # which instrument titles were used (titles only — copyright policy).
+    pre_assessment_status = serializers.SerializerMethodField()
+    instruments_used = serializers.SerializerMethodField()
 
     class Meta:
         model = Child
@@ -37,7 +41,22 @@ class ChildSerializer(serializers.ModelSerializer):
             "education_level", "current_placement", "medical_notes",
             "psychologist", "psychologist_name",
             "guardian", "guardian_name", "termination",
+            "pre_assessment_status", "instruments_used",
         ]
+
+    def get_pre_assessment_status(self, obj):
+        return "Answered" if any(
+            p.status == "completed" for p in obj.pre_assessments.all()) else "Not yet"
+
+    def get_instruments_used(self, obj):
+        titles = []
+        for p in obj.pre_assessments.all():
+            if p.status != "completed":
+                continue
+            for i in p.instruments.all():
+                if i.title not in titles:
+                    titles.append(i.title)
+        return titles
 
     def get_termination(self, obj):
         if obj.status != Child.INACTIVE:

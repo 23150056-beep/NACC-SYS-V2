@@ -254,6 +254,7 @@ function ChildDrawer({ child, canManage, canTerminate, onEdit, onTerminate, onCl
     ['Referral Source', child.referral_source || '—'],
     ['Education Level', child.education_level || '—'],
     ['Current Placement', child.current_placement || '—'],
+    ['Pre-Assessment', child.pre_assessment_status || 'Not yet'],
   ];
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 60, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
@@ -286,6 +287,14 @@ function ChildDrawer({ child, canManage, canTerminate, onEdit, onTerminate, onCl
               <span style={{ fontSize: 13.5, color: 'var(--text-strong)', fontWeight: 700, textAlign: 'right' }}>{v}</span>
             </div>
           ))}
+          {(child.instruments_used || []).length > 0 && (
+            <div>
+              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Instrument titles used</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {child.instruments_used.map((t) => <Badge key={t} tone="brand" size="sm">{t}</Badge>)}
+              </div>
+            </div>
+          )}
           {child.referral_reason && (
             <div>
               <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Referral reason</div>

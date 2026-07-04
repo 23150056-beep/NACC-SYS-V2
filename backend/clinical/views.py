@@ -10,12 +10,12 @@ from activity.models import ActivityLog
 from activity.services import log_activity
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
-    ClinicalInterviewRecord, ProblemEntry,
+    ClinicalInterviewRecord, ProblemEntry, PreAssessment,
 )
 from clinical.serializers import (
     InstrumentCatalogSerializer, AgencyFormTemplateSerializer,
     ConsentRecordSerializer, ClinicalInterviewRecordSerializer,
-    ProblemEntrySerializer,
+    ProblemEntrySerializer, PreAssessmentSerializer,
 )
 
 
@@ -153,6 +153,45 @@ class _ChildScopedClinicalViewSet(viewsets.ModelViewSet):
         log_activity(self.request.user, ActivityLog.UPDATED, ActivityLog.RECORD,
                      entity_type=self.model.__name__, entity_label=obj.child.fullname,
                      entity_id=obj.id, recipient=obj.child.assigned_psychologist)
+
+
+class PreAssessmentViewSet(_ChildScopedClinicalViewSet):
+    model = PreAssessment
+    serializer_class = PreAssessmentSerializer
+    author_field = "psychologist"
+
+    def get_queryset(self):
+        return super().get_queryset().prefetch_related("instruments").select_related("consent", "interview")
+
+    def perform_create(self, serializer):
+        self._assert_can_write(serializer.validated_data["child"])
+        obj = serializer.save(psychologist=self.request.user, status=PreAssessment.IN_PROGRESS)
+        log_activity(self.request.user, ActivityLog.CREATED, ActivityLog.RECORD,
+                     entity_type="PreAssessment", entity_label=obj.child.fullname,
+                     entity_id=obj.id, recipient=obj.child.assigned_psychologist)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """Mark the pre-assessment completed. Requires a SIGNED consent and at
+        least one instrument title selected."""
+        obj = self.get_object()
+        self._assert_can_write(obj.child)
+        if obj.status == PreAssessment.COMPLETED:
+            return Response({"detail": "Already completed."}, status=status.HTTP_400_BAD_REQUEST)
+        if not obj.consent or obj.consent.status != ConsentRecord.SIGNED:
+            return Response({"consent": "A signed consent is required before completing the pre-assessment."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if obj.instruments.count() == 0:
+            return Response({"instruments": "Select at least one instrument title."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        from django.utils import timezone as tz
+        obj.status = PreAssessment.COMPLETED
+        obj.completed_at = tz.now()
+        obj.save(update_fields=["status", "completed_at", "updated_at"])
+        log_activity(request.user, ActivityLog.UPDATED, ActivityLog.RECORD,
+                     entity_type="PreAssessment", entity_label=obj.child.fullname,
+                     entity_id=obj.id, recipient=obj.child.assigned_psychologist)
+        return Response(PreAssessmentSerializer(obj).data)
 
 
 class ConsentRecordViewSet(_ChildScopedClinicalViewSet):
