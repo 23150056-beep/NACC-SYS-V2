@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from '../api/client';
 import { useActivity } from '../context/ActivityContext';
 import { useAuth } from '../context/AuthContext';
@@ -13,7 +13,7 @@ const TYPES = [
 ];
 const HAS_OPTIONS = (t) => t === 'multiple_choice' || t === 'emotion';
 const STATUS_TONE = { draft: 'neutral', active: 'success', archived: 'amber' };
-const blankQuestion = (order) => ({ question_text: '', question_type: 'rating_scale', options: [], concern_direction: 'higher', concern_options: [], order });
+const blankQuestion = (order) => ({ question_text: '', question_type: 'rating_scale', options: [], order });
 const blankForm = () => ({ title: '', age_group: '', description: '', status: 'draft', owner: '', questions: [blankQuestion(1)] });
 
 export default function Questionnaires() {
@@ -24,10 +24,7 @@ export default function Questionnaires() {
   const [items, setItems] = useState([]);
   const [psychologists, setPsychologists] = useState([]);
   const [form, setForm] = useState(null);
-  const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const fileRef = useRef(null);
 
   const load = () => api.get('/questionnaires/').then((r) => setItems(r.data)).catch(() => {});
   useEffect(() => {
@@ -36,34 +33,13 @@ export default function Questionnaires() {
     if (isAdmin) api.get('/users/').then((r) => setPsychologists(r.data.filter((u) => u.role_name === 'Psychologist'))).catch(() => {});
   }, [isAdmin]);
 
-  const openCreate = () => { setError(''); setBanner(''); setForm(blankForm()); };
+  const openCreate = () => { setError(''); setForm(blankForm()); };
   const openEdit = (qn) => {
-    setError(''); setBanner('');
+    setError('');
     api.get(`/questionnaires/${qn.id}/`).then((r) => setForm({
       ...r.data,
-      questions: (r.data.questions.length ? r.data.questions : [blankQuestion(1)]).map((q) => ({ ...q, options: q.options || [], concern_direction: q.concern_direction || 'higher', concern_options: q.concern_options || [] })),
+      questions: (r.data.questions.length ? r.data.questions : [blankQuestion(1)]).map((q) => ({ ...q, options: q.options || [] })),
     }));
-  };
-
-  const onUpload = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setError(''); setBusy(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const { data } = await api.post('/questionnaires/extract/', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setForm({
-        title: data.title || '', age_group: data.age_group || '', description: '', status: 'draft',
-        questions: (data.questions.length ? data.questions : [blankQuestion(1)]).map((q) => ({ ...q, options: q.options || [], concern_direction: q.concern_direction || 'higher', concern_options: q.concern_options || [] })),
-      });
-      setBanner(`Imported ${data.questions.length} question(s) from “${file.name}”. Review and fix each one before publishing.`);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Could not read that file.');
-    } finally {
-      setBusy(false);
-    }
   };
 
   const setQuestion = (i, patch) => setForm((f) => ({ ...f, questions: f.questions.map((q, idx) => (idx === i ? { ...q, ...patch } : q)) }));
@@ -83,7 +59,7 @@ export default function Questionnaires() {
       status: publish ? 'active' : (form.status === 'archived' ? 'draft' : form.status),
       questions: form.questions
         .filter((q) => q.question_text.trim())
-        .map((q, i) => ({ question_text: q.question_text, question_type: q.question_type, options: HAS_OPTIONS(q.question_type) ? q.options : [], concern_direction: q.concern_direction || 'higher', concern_options: HAS_OPTIONS(q.question_type) ? (q.concern_options || []) : [], order: i + 1 })),
+        .map((q, i) => ({ question_text: q.question_text, question_type: q.question_type, options: HAS_OPTIONS(q.question_type) ? q.options : [], order: i + 1 })),
     };
     if (isAdmin) payload.owner = form.owner || null;
     if (!payload.title.trim()) { setError('Title is required.'); return; }
@@ -113,11 +89,9 @@ export default function Questionnaires() {
 
   return (
     <div style={{ ...PAGE, position: 'relative' }}>
-      <input ref={fileRef} type="file" accept="application/pdf,image/png,image/jpeg" onChange={onUpload} style={{ display: 'none' }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Build a questionnaire by hand, or digitize a paper instrument.</div>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Agency-authored forms only — published assessment instruments stay on paper.</div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy} iconLeft={<Icon name={busy ? 'loader' : 'file-up'} size={17} />}>{busy ? 'Reading…' : 'Digitize from paper'}</Button>
           <Button variant="primary" onClick={openCreate} iconLeft={<Icon name="plus" size={17} />}>New Questionnaire</Button>
         </div>
       </div>
@@ -126,7 +100,7 @@ export default function Questionnaires() {
 
       <Card padding="0">
         {items.length === 0 ? (
-          <EmptyState icon={<Icon name="clipboard-pen" size={24} />} title="No questionnaires yet" description="Create one, or upload a paper instrument to digitize it." />
+          <EmptyState icon={<Icon name="clipboard-pen" size={24} />} title="No questionnaires yet" description="Create an agency-authored form to get started." />
         ) : (
           <div className="racco-scroll" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
@@ -168,7 +142,6 @@ export default function Questionnaires() {
             </div>
 
             <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {banner && <Alert tone="warning" icon={<Icon name="sparkles" size={18} />}>{banner}</Alert>}
               {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{error}</Alert>}
               <FormField label="Title" required><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></FormField>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -203,21 +176,6 @@ export default function Questionnaires() {
                       </div>
                       {HAS_OPTIONS(q.question_type) && (
                         <Input value={(q.options || []).join(', ')} onChange={(e) => setQuestion(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} placeholder="Options, comma-separated" />
-                      )}
-                      {q.question_type === 'rating_scale' && (
-                        <Select value={q.concern_direction || 'higher'} onChange={(e) => setQuestion(i, { concern_direction: e.target.value })}>
-                          <option value="higher">Concern = higher ratings</option>
-                          <option value="lower">Concern = lower ratings</option>
-                        </Select>
-                      )}
-                      {q.question_type === 'yes_no' && (
-                        <Select value={q.concern_direction || 'higher'} onChange={(e) => setQuestion(i, { concern_direction: e.target.value })}>
-                          <option value="higher">Concern answer: Yes</option>
-                          <option value="lower">Concern answer: No</option>
-                        </Select>
-                      )}
-                      {HAS_OPTIONS(q.question_type) && (
-                        <Input value={(q.concern_options || []).join(', ')} onChange={(e) => setQuestion(i, { concern_options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} placeholder="Concerning options (comma-separated, must match options)" />
                       )}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

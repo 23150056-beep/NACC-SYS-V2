@@ -4,7 +4,7 @@ import api from '../api/client';
 import { Card, StatCard, Button, Badge, Icon, PAGE } from '../ui';
 
 const RANGES = ['weekly', 'monthly', 'yearly'];
-const EMPTY = { total: 0, children: 0, avg_score: null, avg_confidence: null, by_classification: {}, by_priority: {}, per_psychologist: [], trend: [], attention: [] };
+const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [] };
 
 export default function AgencySummary() {
   const [range, setRange] = useState('monthly');
@@ -25,6 +25,7 @@ export default function AgencySummary() {
 
   const d = data || EMPTY;
   const trend = (d.trend || []).map((t) => ({ bucket: t.bucket, count: t.count }));
+  const caseMix = Object.entries(d.by_case_type || {});
 
   return (
     <div style={PAGE} className="racco-print-area">
@@ -40,17 +41,15 @@ export default function AgencySummary() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 16, marginBottom: 20 }}>
-        <StatCard label="Total Assessments" value={d.total} tone="brand" icon={<Icon name="clipboard-check" size={18} />} />
-        <StatCard label="Children Assessed" value={d.children} tone="success" icon={<Icon name="users" size={18} />} />
-        <StatCard label="Avg Score" value={d.avg_score ?? '—'} tone="amber" icon={<Icon name="activity" size={18} />} />
-        <StatCard label="Avg Confidence" value={d.avg_confidence != null ? `${d.avg_confidence}%` : '—'} tone="brand" icon={<Icon name="gauge" size={18} />} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 16, marginBottom: 20 }}>
+        <StatCard label="Total Sessions" value={d.total} tone="brand" icon={<Icon name="clipboard-check" size={18} />} />
+        <StatCard label="Children Seen" value={d.children} tone="success" icon={<Icon name="users" size={18} />} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20, marginBottom: 20 }}>
-        <Card eyebrow="Assessments over time" title="Trend" padding="20px">
+        <Card eyebrow="Sessions over time" title="Trend" padding="20px">
           {trend.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No assessments in this period.</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No sessions in this period.</div>
           ) : (
             <div style={{ width: '100%', height: 220 }}>
               <ResponsiveContainer>
@@ -65,10 +64,10 @@ export default function AgencySummary() {
             </div>
           )}
         </Card>
-        <Card eyebrow="Outcomes" title="By classification" padding="20px">
+        <Card eyebrow="Caseload" title="By case type" padding="20px">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {Object.entries(d.by_classification).length === 0 && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>—</div>}
-            {Object.entries(d.by_classification).map(([k, v]) => (
+            {caseMix.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>—</div>}
+            {caseMix.map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
                 <span style={{ fontSize: 13, color: 'var(--text-strong)' }}>{k}</span>
                 <span className="racco-mono" style={{ fontWeight: 700, color: 'var(--blue-600)' }}>{v}</span>
@@ -78,40 +77,24 @@ export default function AgencySummary() {
         </Card>
       </div>
 
-      <Card eyebrow="Clinical team" title="Per-psychologist activity" padding="0" style={{ marginBottom: 20 }}>
+      <Card eyebrow="Clinical team" title="Per-psychologist activity" padding="0">
         <div className="racco-scroll" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
             <thead><tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-              {['Psychologist', 'Assessments', 'Case mix'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{h}</th>)}
+              {['Psychologist', 'Sessions'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {d.per_psychologist.length === 0 ? (
-                <tr><td colSpan={3} style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>No assessments in this period.</td></tr>
+                <tr><td colSpan={2} style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>No sessions in this period.</td></tr>
               ) : d.per_psychologist.map((p) => (
                 <tr key={p.name} style={{ borderBottom: '1px solid var(--ink-100)' }}>
                   <td style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{p.name}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-body)' }}>{p.count}</td>
-                  <td style={{ padding: '10px 14px' }}><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{Object.entries(p.classes).map(([k, v]) => <Badge key={k} tone="neutral">{k} · {v}</Badge>)}</div></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </Card>
-
-      <Card eyebrow="Follow-up" title="Children needing attention" padding="20px">
-        {d.attention.length === 0 ? (
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>None flagged this period.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {d.attention.map((c, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 'var(--radius-md)', background: 'var(--red-50)', border: '1px solid var(--red-100)' }}>
-                <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{c.child}</span>
-                <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{c.case_type} · score {c.score ?? '—'}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </Card>
     </div>
   );

@@ -10,7 +10,6 @@ import Topbar from './components/Topbar';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Children from './pages/Children';
-import Assessment from './pages/Assessment';
 import Report from './pages/Report';
 import ChildProgressReport from './pages/ChildProgressReport';
 import Monitoring from './pages/Monitoring';
@@ -41,7 +40,6 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedRoute><Shell><Dashboard /></Shell></ProtectedRoute>} />
           <Route path="/children" element={<ProtectedRoute roles={['Administrator', 'Staff', 'Psychologist']}><Shell><Children /></Shell></ProtectedRoute>} />
-          <Route path="/assessment" element={<ProtectedRoute roles={['Psychologist']}><Shell><Assessment /></Shell></ProtectedRoute>} />
           <Route path="/questionnaires" element={<ProtectedRoute roles={INSTRUMENT_MANAGER_ROLES}><Shell><Questionnaires /></Shell></ProtectedRoute>} />
           <Route path="/report" element={<ProtectedRoute><Shell><Report /></Shell></ProtectedRoute>} />
           <Route path="/report/child/:id" element={<ProtectedRoute><Shell><ChildProgressReport /></Shell></ProtectedRoute>} />

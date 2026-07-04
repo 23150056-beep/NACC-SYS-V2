@@ -32,10 +32,6 @@ class Question(models.Model):
     question_type = models.CharField(max_length=50)
     options = models.JSONField(default=list, blank=True)
     order = models.PositiveIntegerField(default=0)
-    HIGHER, LOWER = "higher", "lower"
-    CONCERN_CHOICES = [(HIGHER, "Higher"), (LOWER, "Lower")]
-    concern_direction = models.CharField(max_length=10, choices=CONCERN_CHOICES, default=HIGHER)
-    concern_options = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -79,46 +75,3 @@ class Response(models.Model):
         db_table = "tbl_response"
 
 
-class AssessmentResult(models.Model):
-    assessment = models.OneToOneField(
-        Assessment, on_delete=models.CASCADE, related_name="result")
-    behavioral_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
-    classification = models.CharField(max_length=50, blank=True)
-    confidence = models.PositiveSmallIntegerField(null=True, blank=True)
-    overridden = models.BooleanField(default=False)
-    assessment_date = models.DateField(null=True, blank=True)
-    assessment_type = models.CharField(max_length=50, blank=True)
-    generated_date = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "tbl_assessment_result"
-
-
-class Recommendation(models.Model):
-    result = models.ForeignKey(
-        AssessmentResult, on_delete=models.CASCADE, related_name="recommendations")
-    recommendation_text = models.TextField(blank=True)
-    priority_level = models.CharField(max_length=20, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "tbl_recommendation"
-
-
-class AnalysisSetting(models.Model):
-    """Singleton (pk=1) holding the AI-engine gate configuration."""
-    min_confidence_threshold = models.PositiveSmallIntegerField(default=80)
-    require_override_on_low_confidence = models.BooleanField(default=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "tbl_analysis_setting"
-
-    def save(self, *args, **kwargs):
-        self.pk = 1
-        super().save(*args, **kwargs)
-
-    @classmethod
-    def load(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
-        return obj

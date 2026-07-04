@@ -48,19 +48,8 @@ class CanManageInstruments(BasePermission):
                     and _role_name(request) in INSTRUMENT_MANAGER_ROLES)
 
 
-# Roles allowed to take/administer assessments. Psychologist-only: a psychologist
-# may only assess children assigned to them using instruments they own.
-ASSESSMENT_TAKER_ROLES = (Role.PSYCHOLOGIST,)
-
-
-class CanTakeAssessments(BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated
-                    and _role_name(request) in ASSESSMENT_TAKER_ROLES)
-
-
 # Roles allowed to VIEW assessment results (read-only). Staff is included for
-# case coordination; creating/running assessments stays ASSESSMENT_TAKER_ROLES.
+# case coordination. V2: in-app assessment administration was removed entirely.
 RESULT_VIEWER_ROLES = (Role.ADMINISTRATOR, Role.PSYCHOLOGIST, Role.STAFF)
 
 

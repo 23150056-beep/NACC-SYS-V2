@@ -2,34 +2,9 @@ from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from accounts.models import Role
 from children.models import Child
-from assessments.models import Assessment, AssessmentResult, Recommendation
-from assessments.reports import trajectory
+from assessments.models import Assessment
 
 User = get_user_model()
-
-
-class TrajectoryUnitTest(APITestCase):
-    def test_baseline_with_fewer_than_two_scores(self):
-        self.assertEqual(trajectory([]), "baseline")
-        self.assertEqual(trajectory([50]), "baseline")
-        self.assertEqual(trajectory([None, 50]), "baseline")
-
-    def test_improving_when_latest_score_drops(self):
-        self.assertEqual(trajectory([60, 50]), "improving")
-
-    def test_worsening_when_latest_score_rises(self):
-        self.assertEqual(trajectory([50, 60]), "worsening")
-
-    def test_stable_within_band(self):
-        self.assertEqual(trajectory([50, 53]), "stable")
-
-
-def _result(a, score, cls, priority="Medium", conf=90):
-    r = AssessmentResult.objects.create(
-        assessment=a, behavioral_score=score, classification=cls,
-        confidence=conf, assessment_date=a.assessment_date)
-    Recommendation.objects.create(result=r, recommendation_text="x", priority_level=priority)
-    return r
 
 
 class ReportApiTest(APITestCase):
@@ -41,21 +16,21 @@ class ReportApiTest(APITestCase):
         self.psy = User.objects.create_user(email="p@racco1.gov.ph", username="p", password="pass1234", role=self.psy_role)
         self.staff = User.objects.create_user(email="s@racco1.gov.ph", username="s", password="pass1234", role=self.staff_role)
         self.child = Child.objects.create(fullname="Ana", case_type="Foster Care", assigned_psychologist=self.psy)
-        a1 = Assessment.objects.create(child=self.child, psychologist=self.psy, status="completed")
-        _result(a1, 60, "Needs Counseling Attention", "High")
-        a2 = Assessment.objects.create(child=self.child, psychologist=self.psy, status="completed")
-        _result(a2, 50, "Needs Monitoring", "Medium")
+        Assessment.objects.create(child=self.child, psychologist=self.psy, status="completed",
+                                  classification="Needs close support")
+        Assessment.objects.create(child=self.child, psychologist=self.psy, status="completed",
+                                  classification="Improving steadily")
 
     def _auth(self, email):
         token = self.client.post("/api/auth/login/", {"email": email, "password": "pass1234"}).data["access"]
         self.client.credentials(HTTP_AUTHORIZATION="Bearer " + token)
 
-    def test_child_report_returns_history_and_trajectory(self):
+    def test_child_report_returns_history(self):
         self._auth("p@racco1.gov.ph")
         resp = self.client.get(f"/api/reports/child/{self.child.id}/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.data["assessments"]), 2)
-        self.assertEqual(resp.data["trajectory"], "improving")  # 60 -> 50
+        self.assertEqual(resp.data["child"]["fullname"], "Ana")
 
     def test_child_report_blocked_for_unassigned_psychologist(self):
         User.objects.create_user(email="o@racco1.gov.ph", username="o", password="pass1234", role=self.psy_role)
@@ -69,7 +44,8 @@ class ReportApiTest(APITestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["total"], 2)
         self.assertEqual(resp.data["children"], 1)
-        self.assertEqual(len(resp.data["attention"]), 0)  # latest is Needs Monitoring
+        self.assertIn("by_case_type", resp.data)
+        self.assertIn("per_psychologist", resp.data)
 
     def test_summary_forbidden_for_psychologist(self):
         self._auth("p@racco1.gov.ph")
@@ -87,9 +63,8 @@ class ReportApiTest(APITestCase):
         resp = self.client.get("/api/reports/dashboard/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["total_children"], 1)
-        # latest assessment for the child is "Needs Monitoring"
-        self.assertEqual(resp.data["by_status"]["monitoring"], 1)
-        self.assertEqual(resp.data["by_status"]["attention"], 0)
+        self.assertEqual(resp.data["unassessed"], 0)
+        self.assertIn("by_case_type", resp.data)
 
     def test_dashboard_scoped_for_psychologist(self):
         self._auth("p@racco1.gov.ph")
@@ -155,17 +130,16 @@ class MonitoringApiTest(APITestCase):
             email="o@racco1.gov.ph", username="o", password="pass1234", role=self.psy_role)
         self.staff = User.objects.create_user(
             email="s@racco1.gov.ph", username="s", password="pass1234", role=self.staff_role)
-        # Assigned to psy, two assessments 60 -> 50 (improving).
+        # Assigned to psy, two sessions; latest carries the practitioner's classification.
         self.mine = Child.objects.create(
             fullname="Ana", case_type="Foster Care", assigned_psychologist=self.psy)
-        a1 = Assessment.objects.create(child=self.mine, psychologist=self.psy, status="completed")
-        _result(a1, 60, "Needs Counseling Attention", "High")
-        a2 = Assessment.objects.create(child=self.mine, psychologist=self.psy, status="completed")
-        _result(a2, 50, "Needs Monitoring", "Medium")
+        Assessment.objects.create(child=self.mine, psychologist=self.psy, status="completed",
+                                  classification="Needs close support")
+        Assessment.objects.create(child=self.mine, psychologist=self.psy, status="completed",
+                                  classification="Improving steadily")
         # Assigned to a different psychologist.
         self.theirs = Child.objects.create(fullname="Ben", assigned_psychologist=self.other)
-        a3 = Assessment.objects.create(child=self.theirs, psychologist=self.other, status="completed")
-        _result(a3, 40, "Normal", "Low")
+        Assessment.objects.create(child=self.theirs, psychologist=self.other, status="completed")
         # Assigned to psy but never assessed.
         self.fresh = Child.objects.create(fullname="Cara", assigned_psychologist=self.psy)
         # Archived — must never appear.
@@ -197,24 +171,21 @@ class MonitoringApiTest(APITestCase):
         names = [r["child_name"] for r in resp.data]
         self.assertEqual(names, ["Ana", "Cara"])  # Ben (other psy) and Zed (archived) excluded
 
-    def test_assessed_row_has_trajectory_and_latest(self):
+    def test_assessed_row_has_latest_activity(self):
         self._auth("a@racco1.gov.ph")
         resp = self.client.get("/api/reports/monitoring/")
         ana = next(r for r in resp.data if r["child_name"] == "Ana")
-        self.assertEqual(ana["trajectory"], "improving")        # 60 -> 50
-        self.assertEqual(ana["latest_score"], 50.0)
-        self.assertEqual(ana["latest_classification"], "Needs Monitoring")
+        self.assertEqual(ana["latest_classification"], "Improving steadily")
         self.assertEqual(ana["assessment_count"], 2)
         self.assertEqual(ana["case_ref"], f"C-{self.mine.id:04d}")
         self.assertIsNotNone(ana["last_assessment_date"])
 
-    def test_unassessed_child_is_baseline(self):
+    def test_unassessed_child_has_no_activity(self):
         self._auth("p@racco1.gov.ph")
         resp = self.client.get("/api/reports/monitoring/")
         cara = next(r for r in resp.data if r["child_name"] == "Cara")
-        self.assertEqual(cara["trajectory"], "baseline")
-        self.assertIsNone(cara["latest_score"])
         self.assertIsNone(cara["latest_classification"])
+        self.assertIsNone(cara["last_assessment_date"])
         self.assertEqual(cara["assessment_count"], 0)
 
 
@@ -228,7 +199,6 @@ class NextSessionTest(APITestCase):
         self.staff = User.objects.create_user(email="s@racco1.gov.ph", username="s", password="pass1234", role=Role.objects.create(role_name=Role.STAFF))
         self.child = Child.objects.create(fullname="Ana", assigned_psychologist=self.psy)
         self.a = Assessment.objects.create(child=self.child, psychologist=self.psy, status="completed")
-        _result(self.a, 50, "Needs Monitoring", "Medium")
 
     def _auth(self, email):
         token = self.client.post("/api/auth/login/", {"email": email, "password": "pass1234"}).data["access"]

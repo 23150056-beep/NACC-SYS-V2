@@ -7,11 +7,10 @@ import { useActivity } from '../context/ActivityContext';
 const SCREEN_TITLES = {
   '/': ['Dashboard', 'Regional overview of cases & activity'],
   '/children': ['Records', 'Child profiles, assigned psychologist & case status'],
-  '/assessment': ['Assessment', 'Assessment instrument, AI analysis & clinical notes'],
-  '/questionnaires': ['Assessment Instruments', 'Build & manage assessment instruments'],
+  '/questionnaires': ['Assessment Instruments', 'Instrument catalog & agency forms'],
   '/report': ['Assessment Results', 'Shared counseling outcomes for continuity of care'],
   '/users': ['User Management', 'Accounts & roles'],
-  '/settings': ['System Settings', 'Agency configuration & AI engine'],
+  '/settings': ['System Settings', 'Agency configuration'],
 };
 
 export const ACTION_META = {
