@@ -84,6 +84,30 @@ class PsychologicalReportTest(DocumentsBase):
         self.assertEqual(resp.status_code, 403)
 
 
+@override_settings(MEDIA_ROOT=TEMP_MEDIA)
+class ConsentScanDownloadTest(DocumentsBase):
+    def test_scan_download_scoped(self):
+        from clinical.models import ConsentRecord
+        self._auth("p@racco1.gov.ph")
+        scan = SimpleUploadedFile("consent.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+        resp = self.client.post("/api/consents/", {
+            "child": self.child.id, "signer_name": "M", "status": "signed",
+            "scan": scan}, format="multipart")
+        self.assertEqual(resp.status_code, 201)
+        cid = resp.data["id"]
+        dl = self.client.get(f"/api/consents/{cid}/download/")
+        self.assertEqual(dl.status_code, 200)
+        b"".join(dl.streaming_content)  # release handle (Windows)
+        self._auth("o@racco1.gov.ph")
+        self.assertEqual(self.client.get(f"/api/consents/{cid}/download/").status_code, 404)
+
+    def test_download_without_scan_404(self):
+        from clinical.models import ConsentRecord
+        rec = ConsentRecord.objects.create(child=self.child, status="signed")
+        self._auth("p@racco1.gov.ph")
+        self.assertEqual(self.client.get(f"/api/consents/{rec.id}/download/").status_code, 404)
+
+
 class RemarkAndPlanTest(DocumentsBase):
     def test_remark_crud(self):
         self._auth("p@racco1.gov.ph")

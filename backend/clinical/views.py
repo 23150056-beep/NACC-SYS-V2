@@ -204,6 +204,22 @@ class ConsentRecordViewSet(_ChildScopedClinicalViewSet):
     author_field = "recorded_by"
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """Authenticated serving of the signed-consent scan."""
+        from django.http import FileResponse
+        obj = self.get_object()
+        if not obj.scan:
+            return Response({"detail": "No scan attached to this consent."},
+                            status=status.HTTP_404_NOT_FOUND)
+        try:
+            handle = obj.scan.open("rb")
+        except (FileNotFoundError, ValueError):
+            return Response({"detail": "File is missing from storage."},
+                            status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(handle, as_attachment=True,
+                            filename=obj.scan.name.rsplit("/", 1)[-1])
+
 
 class ClinicalInterviewRecordViewSet(_ChildScopedClinicalViewSet):
     model = ClinicalInterviewRecord
