@@ -5,66 +5,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.models import Role
-from accounts.permissions import (
-    CanManageInstruments, CanViewResults, IsAdminOrStaff,
-)
+from accounts.permissions import CanViewResults, IsAdminOrStaff
 from activity.models import ActivityLog
 from activity.services import log_activity
 from assessments import reports
-from assessments.models import Questionnaire, Assessment
+from assessments.models import Assessment
 from children.models import Child
 from children.serializers import ChildSerializer
-from assessments.serializers import (
-    QuestionnaireSerializer, AssessmentListSerializer, AssessmentEditSerializer,
-)
-
-
-class QuestionnaireViewSet(viewsets.ModelViewSet):
-    permission_classes = [CanManageInstruments]
-    pagination_class = None
-    serializer_class = QuestionnaireSerializer
-
-    def get_queryset(self):
-        qs = Questionnaire.objects.all().order_by("-created_at")
-        if self.request.query_params.get("include_archived") != "true":
-            qs = qs.exclude(status=Questionnaire.ARCHIVED)
-        role = getattr(getattr(self.request.user, "role", None), "role_name", None)
-        if role == Role.PSYCHOLOGIST:
-            qs = qs.filter(owner=self.request.user)
-        return qs
-
-    def _log(self, obj, action_name):
-        log_activity(self.request.user, action_name, ActivityLog.RECORD,
-                     entity_type="Questionnaire", entity_label=obj.title, entity_id=obj.id)
-
-    def perform_create(self, serializer):
-        role = getattr(getattr(self.request.user, "role", None), "role_name", None)
-        if role == Role.PSYCHOLOGIST:
-            obj = serializer.save(owner=self.request.user)
-        else:
-            if not serializer.validated_data.get("owner"):
-                raise serializers.ValidationError(
-                    {"owner": "Select the psychologist who owns this instrument."})
-            obj = serializer.save()
-        self._log(obj, ActivityLog.CREATED)
-
-    def perform_update(self, serializer):
-        self._log(serializer.save(), ActivityLog.UPDATED)
-
-    @action(detail=True, methods=["post"])
-    def archive(self, request, pk=None):
-        obj = self.get_object()
-        obj.status = Questionnaire.ARCHIVED
-        obj.save(update_fields=["status", "updated_at"])
-        self._log(obj, ActivityLog.ARCHIVED)
-        return Response({"status": "archived"}, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=["post"])
-    def publish(self, request, pk=None):
-        obj = self.get_object()
-        obj.status = Questionnaire.ACTIVE
-        obj.save(update_fields=["status", "updated_at"])
-        return Response({"status": "active"}, status=status.HTTP_200_OK)
+from assessments.serializers import AssessmentListSerializer, AssessmentEditSerializer
 
 
 class AssessmentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from assessments.models import Questionnaire, Question, Assessment, Response
+from assessments.models import Questionnaire, Assessment
 
-for m in (Questionnaire, Question, Assessment, Response):
+for m in (Questionnaire, Assessment):
     admin.site.register(m)

@@ -4,6 +4,9 @@ from children.models import Child
 
 
 class Questionnaire(models.Model):
+    """LEGACY (V2): kept only so historical Assessment rows keep their
+    instrument title. The managed catalog lives in clinical.InstrumentCatalog;
+    there is no questionnaire CRUD API anymore."""
     DRAFT, ACTIVE, ARCHIVED = "draft", "active", "archived"
     STATUS_CHOICES = [(DRAFT, "Draft"), (ACTIVE, "Active"), (ARCHIVED, "Archived")]
 
@@ -23,21 +26,6 @@ class Questionnaire(models.Model):
 
     def __str__(self):
         return self.title
-
-
-class Question(models.Model):
-    questionnaire = models.ForeignKey(
-        Questionnaire, on_delete=models.CASCADE, related_name="questions")
-    question_text = models.TextField()
-    question_type = models.CharField(max_length=50)
-    options = models.JSONField(default=list, blank=True)
-    order = models.PositiveIntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "tbl_question"
-        ordering = ["order", "id"]
 
 
 class Assessment(models.Model):
@@ -63,15 +51,5 @@ class Assessment(models.Model):
 
     class Meta:
         db_table = "tbl_assessment"
-
-
-class Response(models.Model):
-    assessment = models.ForeignKey(
-        Assessment, on_delete=models.CASCADE, related_name="responses")
-    question = models.ForeignKey(Question, on_delete=models.PROTECT)
-    answer = models.TextField(blank=True)
-
-    class Meta:
-        db_table = "tbl_response"
 
 
