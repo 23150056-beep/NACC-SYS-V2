@@ -1,14 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../api/client';
-import { Card, StatCard, Button, Badge, Icon, PAGE } from '../ui';
+import { useToast } from '../context/ToastContext';
+import { Card, StatCard, Button, Badge, Alert, Icon, PAGE } from '../ui';
 
 const RANGES = ['weekly', 'monthly', 'yearly'];
 const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [], terminations_by_reason: {}, pending_pre_assessments: 0, caseload_per_psychologist: [] };
 
 export default function AgencySummary() {
+  const toast = useToast();
   const [range, setRange] = useState('monthly');
   const [data, setData] = useState(null);
+  const [narrative, setNarrative] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+
+  const generateNarrative = async () => {
+    setAiBusy(true);
+    try {
+      const d = data || {};
+      const { data: resp } = await api.post('/ai/census-narrative/', {
+        stats: {
+          range, completed_pre_assessments: d.total, children_seen: d.children,
+          pending_pre_assessments: d.pending_pre_assessments,
+          by_case_type: d.by_case_type, terminations_by_reason: d.terminations_by_reason,
+        },
+      });
+      setNarrative(resp.draft);
+    } catch (err) {
+      toast.error(err.response?.status === 503
+        ? 'AI assistance is switched off or unreachable.'
+        : 'Could not generate the narrative.');
+    } finally { setAiBusy(false); }
+  };
 
   useEffect(() => {
     api.get(`/reports/summary/?range=${range}`).then((r) => setData(r.data)).catch(() => setData(EMPTY));
@@ -36,6 +59,7 @@ export default function AgencySummary() {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 10 }} className="racco-no-print">
+          <Button variant="secondary" onClick={generateNarrative} disabled={aiBusy || !data} iconLeft={<Icon name={aiBusy ? 'loader' : 'sparkles'} size={17} />}>{aiBusy ? 'Drafting…' : 'AI Narrative'}</Button>
           <Button variant="secondary" onClick={downloadCsv} iconLeft={<Icon name="download" size={17} />}>CSV</Button>
           <Button variant="secondary" onClick={() => window.print()} iconLeft={<Icon name="printer" size={17} />}>Print / Save PDF</Button>
         </div>
@@ -46,6 +70,13 @@ export default function AgencySummary() {
         <StatCard label="Children Seen" value={d.children} tone="success" icon={<Icon name="users" size={18} />} />
         <StatCard label="Pending Pre-Assessments" value={d.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} />
       </div>
+
+      {narrative && (
+        <Card eyebrow="AI-drafted narrative" title="Monthly summary paragraph" padding="20px" style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: 13.5, color: 'var(--text-body)', lineHeight: 1.65, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{narrative}</p>
+          <Alert disclaimer title="Draft only.">AI-drafted decision support — review and edit before including it in the agency report.</Alert>
+        </Card>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20, marginBottom: 20 }}>
         <Card eyebrow="Sessions over time" title="Trend" padding="20px">

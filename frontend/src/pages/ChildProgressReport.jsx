@@ -20,6 +20,8 @@ export default function ChildProgressReport() {
   const [result, setResult] = useState(null); // add-result drawer
   const [plan, setPlan] = useState(null); // treatment plan drawer
   const [instruments, setInstruments] = useState([]);
+  const [aiModal, setAiModal] = useState(null); // { title, draft, disclaimer, onConfirm? }
+  const [aiBusy, setAiBusy] = useState(false);
 
   const load = () => api.get(`/reports/child/${id}/`).then((r) => setData(r.data)).catch(() => setData('error'));
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
@@ -67,11 +69,56 @@ export default function ChildProgressReport() {
     } catch { toast.error('Could not download the file.'); }
   };
 
+  const aiUnavailable = (err) => {
+    toast.error(err.response?.status === 503
+      ? 'AI assistance is switched off or unreachable — the system works fully without it.'
+      : (err.response?.data?.detail || 'AI request failed.'));
+  };
+
+  const aiBrief = async () => {
+    setAiBusy(true);
+    try {
+      const { data: d } = await api.post(`/ai/brief/child/${id}/`);
+      setAiModal({ title: 'AI pre-session brief (draft)', draft: d.draft, disclaimer: d.disclaimer });
+    } catch (err) { aiUnavailable(err); } finally { setAiBusy(false); }
+  };
+
+  const aiPolish = async () => {
+    if (!remarkText.trim()) return;
+    setAiBusy(true);
+    try {
+      const { data: d } = await api.post('/ai/polish-remark/', { text: remarkText.trim() });
+      setRemarkText(d.draft);
+      toast.success('Draft polished — review before saving');
+    } catch (err) { aiUnavailable(err); } finally { setAiBusy(false); }
+  };
+
+  const aiSummarize = async (f) => {
+    setAiBusy(true);
+    try {
+      const { data: d } = await api.post(`/ai/summarize-report/${f.id}/`);
+      setAiModal({
+        title: `AI summary draft — ${f.original_filename}`,
+        draft: d.draft, disclaimer: d.disclaimer, editable: true,
+        onConfirm: async (text) => {
+          try {
+            await api.post(`/ai/confirm-summary/${f.id}/`, { text });
+            toast.success('Summary confirmed');
+            setAiModal(null); load();
+          } catch (err) { aiUnavailable(err); }
+        },
+      });
+    } catch (err) { aiUnavailable(err); } finally { setAiBusy(false); }
+  };
+
   return (
     <div style={PAGE} className="racco-print-area">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }} className="racco-no-print">
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, gap: 10, flexWrap: 'wrap' }} className="racco-no-print">
         <Button variant="ghost" onClick={() => navigate('/reports')} iconLeft={<Icon name="arrow-left" size={17} />}>Back to Results</Button>
-        <Button variant="secondary" onClick={() => window.print()} iconLeft={<Icon name="printer" size={17} />}>Print / Save PDF</Button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {canWrite && <Button variant="primary" onClick={aiBrief} disabled={aiBusy} iconLeft={<Icon name={aiBusy ? 'loader' : 'sparkles'} size={17} />}>{aiBusy ? 'Working…' : 'AI Pre-Session Brief'}</Button>}
+          <Button variant="secondary" onClick={() => window.print()} iconLeft={<Icon name="printer" size={17} />}>Print / Save PDF</Button>
+        </div>
       </div>
 
       {/* Profile header */}
@@ -162,7 +209,19 @@ export default function ChildProgressReport() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.original_filename}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{f.report_type}{f.coverage ? ` · ${f.coverage}` : ''} · {f.author_name || '—'} · {(f.created_at || '').slice(0, 10)}</div>
+                  {f.ai_summary && (
+                    <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-100)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <Icon name="sparkles" size={12} style={{ color: 'var(--blue-600)' }} />
+                        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--blue-700)' }}>
+                          AI summary {f.ai_summary_confirmed ? '· confirmed' : '· draft (unconfirmed)'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{f.ai_summary}</p>
+                    </div>
+                  )}
                 </div>
+                {canWrite && f.has_text && <Button variant="ghost" onClick={() => aiSummarize(f)} disabled={aiBusy} iconLeft={<Icon name="sparkles" size={15} />} className="racco-no-print">AI Summary</Button>}
                 <Button variant="ghost" onClick={() => download(f)} iconLeft={<Icon name="download" size={15} />} className="racco-no-print">Download</Button>
               </div>
             ))}
@@ -223,7 +282,8 @@ export default function ChildProgressReport() {
         {canWrite && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: data.remarks.length ? 18 : 0 }} className="racco-no-print">
             <textarea value={remarkText} onChange={(e) => setRemarkText(e.target.value)} rows={3} placeholder="Add a dated remark for this child…" style={textarea} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <Button variant="ghost" onClick={aiPolish} disabled={!remarkText.trim() || aiBusy} iconLeft={<Icon name="sparkles" size={15} />}>Polish with AI</Button>
               <Button variant="primary" onClick={addRemark} iconLeft={<Icon name="plus" size={16} />} disabled={!remarkText.trim()}>Add remark</Button>
             </div>
           </div>
@@ -263,6 +323,30 @@ export default function ChildProgressReport() {
             </FormField>
             <Button variant="primary" onClick={saveResult} disabled={!result.summary.trim()} iconLeft={<Icon name="save" size={16} />}>Save entry</Button>
             <div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Manual input only — the system never computes scores.</div>
+          </div>
+        </div>
+      )}
+
+      {/* AI draft modal */}
+      {aiModal && (
+        <div onClick={() => setAiModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 90 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 560, maxWidth: '94%', maxHeight: '86vh', overflow: 'hidden', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', background: 'var(--ink-50)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Icon name="sparkles" size={18} style={{ color: 'var(--blue-600)' }} />
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-strong)' }}>{aiModal.title}</span>
+            </div>
+            <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {aiModal.editable ? (
+                <textarea value={aiModal.draft} onChange={(e) => setAiModal({ ...aiModal, draft: e.target.value })} rows={12} style={textarea} />
+              ) : (
+                <p style={{ fontSize: 13.5, color: 'var(--text-body)', lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap' }}>{aiModal.draft}</p>
+              )}
+              <Alert disclaimer title="Draft only.">{aiModal.disclaimer}</Alert>
+            </div>
+            <div style={{ padding: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <Button variant="secondary" onClick={() => setAiModal(null)}>Close</Button>
+              {aiModal.onConfirm && <Button variant="primary" onClick={() => aiModal.onConfirm(aiModal.draft)} iconLeft={<Icon name="check" size={16} />}>Confirm & save</Button>}
+            </div>
           </div>
         </div>
       )}

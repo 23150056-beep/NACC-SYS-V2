@@ -1,16 +1,37 @@
-import React, { useState } from 'react';
-import { Card, Button, Badge, Input, FormField, Switch, Icon, PAGE } from '../ui';
+import React, { useState, useEffect } from 'react';
+import api from '../api/client';
+import { Card, Button, Badge, Input, FormField, Switch, Alert, Icon, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
+
+const FEATURES = [
+  ['feature_brief', 'Pre-session brief', 'Summarizes recent records before a session (A1).'],
+  ['feature_doc_intelligence', 'Report document intelligence', 'Drafts key findings from uploaded reports (A2).'],
+  ['feature_remark_polish', 'Remark polishing', 'Rewrites shorthand remarks as clinical prose (A3).'],
+  ['feature_census_narrative', 'Census narrative', 'Drafts the monthly agency summary paragraph (A5).'],
+];
 
 export default function Settings() {
   const toast = useToast();
   const [agency, setAgency] = useState('St. Joseph Orphanage');
   const [sync, setSync] = useState(true);
+  const [ai, setAi] = useState(null);
 
-  const saveConfig = () => {
-    // Agency fields are display-only for now; server-backed settings
-    // (AI feature flags, Ollama endpoint) arrive with the AI layer.
-    toast.success('Settings saved');
+  useEffect(() => {
+    api.get('/ai/settings/').then((r) => setAi(r.data)).catch(() => {});
+  }, []);
+
+  const saveConfig = async () => {
+    try {
+      if (ai) {
+        const { updated_at, ...payload } = ai;
+        await api.patch('/ai/settings/', payload);
+      }
+      toast.success('Settings saved');
+    } catch (err) {
+      toast.error(err.response?.status === 403
+        ? 'Only an Administrator can change these settings.'
+        : 'Could not save settings. Please try again.');
+    }
   };
 
   return (
@@ -26,12 +47,37 @@ export default function Settings() {
           </div>
         </Card>
 
-        <Card eyebrow="AI Assistance" title="Local AI Layer" padding="22px">
-          <p style={{ fontSize: 13.5, color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
-            AI-assisted summaries and document intelligence run on a local model and are
-            configured here once the AI layer is enabled. Every AI feature is optional —
-            the system is fully functional with AI switched off.
-          </p>
+        <Card eyebrow="AI Assistance" title="Local AI Layer (Ollama)" padding="22px">
+          {!ai ? (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading…</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Alert disclaimer title="Private by design.">
+                All AI runs on a local model — child data never leaves this machine. Every output is a
+                draft the psychologist confirms; the system is fully functional with AI off.
+              </Alert>
+              <Switch checked={ai.enabled} onChange={(v) => setAi({ ...ai, enabled: v })} label="Enable AI assistance (master switch)" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <FormField label="Ollama endpoint">
+                  <Input value={ai.ollama_url} onChange={(e) => setAi({ ...ai, ollama_url: e.target.value })} disabled={!ai.enabled} />
+                </FormField>
+                <FormField label="Model">
+                  <Input value={ai.model_name} onChange={(e) => setAi({ ...ai, model_name: e.target.value })} disabled={!ai.enabled} placeholder="qwen2.5:7b-instruct" />
+                </FormField>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, opacity: ai.enabled ? 1 : 0.5 }}>
+                {FEATURES.map(([key, label, hint]) => (
+                  <div key={key} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '10px 12px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>{label}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{hint}</div>
+                    </div>
+                    <Switch checked={ai[key]} onChange={(v) => setAi({ ...ai, [key]: v })} disabled={!ai.enabled} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
