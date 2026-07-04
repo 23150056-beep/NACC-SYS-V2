@@ -9,6 +9,7 @@ const SCREEN_TITLES = {
   '/children': ['Records', 'Child profiles, assigned psychologist & case status'],
   '/instruments': ['Pre-Assessment Instruments', 'Instrument title catalog & agency form templates'],
   '/pre-assessment': ['Pre-Assessment', 'Guided flow: consent, interview, instruments, problems'],
+  '/schedule': ['Calendar', 'Appointments & psychologist availability'],
   '/reports': ['Results & Reports', 'Manual result entries & uploaded psychological reports'],
   '/users': ['User Management', 'Accounts & roles'],
   '/settings': ['System Settings', 'Agency configuration'],

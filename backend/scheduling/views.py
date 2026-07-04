@@ -1,0 +1,153 @@
+from datetime import timedelta
+
+from django.utils import timezone
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from accounts.models import Role
+from activity.models import ActivityLog
+from activity.services import log_activity
+from scheduling.models import AvailabilityBlock, Appointment
+from scheduling.serializers import AvailabilityBlockSerializer, AppointmentSerializer
+
+
+def _role(request):
+    return getattr(getattr(request.user, "role", None), "role_name", None)
+
+
+class AvailabilityBlockViewSet(viewsets.ModelViewSet):
+    """Psychologists manage their own availability; admin manages all;
+    staff read (to book against)."""
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    serializer_class = AvailabilityBlockSerializer
+
+    def get_queryset(self):
+        qs = AvailabilityBlock.objects.select_related("psychologist")
+        if self.request.query_params.get("include_inactive") != "true":
+            qs = qs.filter(active=True)
+        psy = self.request.query_params.get("psychologist")
+        if psy and str(psy).isdigit():
+            qs = qs.filter(psychologist_id=psy)
+        return qs
+
+    def _assert_can_write(self, psychologist_id):
+        role = _role(self.request)
+        if role == Role.ADMINISTRATOR:
+            return
+        if role == Role.PSYCHOLOGIST and psychologist_id == self.request.user.id:
+            return
+        raise PermissionDenied("You can only manage your own availability.")
+
+    def perform_create(self, serializer):
+        role = _role(self.request)
+        if role == Role.PSYCHOLOGIST:
+            serializer.save(psychologist=self.request.user)
+        else:
+            psy = serializer.validated_data.get("psychologist")
+            if psy is None:
+                raise ValidationError({"psychologist": "Select the psychologist."})
+            self._assert_can_write(psy.id)
+            serializer.save()
+
+    def perform_update(self, serializer):
+        self._assert_can_write(serializer.instance.psychologist_id)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._assert_can_write(instance.psychologist_id)
+        instance.delete()
+
+
+class AppointmentViewSet(viewsets.ModelViewSet):
+    """Calendar appointments. Staff/admin book against a psychologist's
+    availability; a psychologist may book freely on their own schedule.
+    Status transitions via actions (completed / no_show / cancelled)."""
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    serializer_class = AppointmentSerializer
+
+    def get_queryset(self):
+        qs = Appointment.objects.select_related("child", "psychologist", "booked_by")
+        role = _role(self.request)
+        if role == Role.PSYCHOLOGIST:
+            qs = qs.filter(psychologist=self.request.user)
+        frm = self.request.query_params.get("from")
+        to = self.request.query_params.get("to")
+        if frm:
+            qs = qs.filter(start__date__gte=frm)
+        if to:
+            qs = qs.filter(start__date__lte=to)
+        child = self.request.query_params.get("child")
+        if child and str(child).isdigit():
+            qs = qs.filter(child_id=child)
+        return qs
+
+    def _validate_booking(self, psychologist, start, duration_minutes):
+        """Staff/admin bookings must land inside an active availability block
+        with free capacity. Psychologists may override on their own calendar."""
+        role = _role(self.request)
+        if role == Role.PSYCHOLOGIST and psychologist.id == self.request.user.id:
+            return
+        local = timezone.localtime(start) if timezone.is_aware(start) else start
+        blocks = [b for b in psychologist.availability_blocks.filter(active=True)
+                  if b.covers(local)]
+        if not blocks:
+            raise ValidationError(
+                {"start": "That time is outside the psychologist's availability."})
+        block = blocks[0]
+        day_start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        taken = (Appointment.objects
+                 .filter(psychologist=psychologist,
+                         start__gte=day_start, start__lt=day_start + timedelta(days=1))
+                 .exclude(status=Appointment.CANCELLED)
+                 .filter(start__time__gte=block.start_time, start__time__lt=block.end_time)
+                 .count())
+        if taken >= block.capacity:
+            raise ValidationError({"start": "That availability block is fully booked."})
+
+    def perform_create(self, serializer):
+        role = _role(self.request)
+        if role == Role.PSYCHOLOGIST:
+            psychologist = self.request.user
+        else:
+            psychologist = serializer.validated_data.get("psychologist")
+            if psychologist is None:
+                raise ValidationError({"psychologist": "Select the psychologist."})
+        self._validate_booking(psychologist,
+                               serializer.validated_data["start"],
+                               serializer.validated_data.get("duration_minutes", 60))
+        obj = serializer.save(psychologist=psychologist, booked_by=self.request.user)
+        log_activity(self.request.user, ActivityLog.CREATED, ActivityLog.RECORD,
+                     entity_type="Appointment", entity_label=obj.child.fullname,
+                     entity_id=obj.id, recipient=obj.psychologist)
+
+    def _set_status(self, request, pk, new_status):
+        obj = self.get_object()
+        role = _role(request)
+        allowed = role == Role.ADMINISTRATOR or obj.psychologist_id == request.user.id \
+            or (role == Role.STAFF and new_status == Appointment.CANCELLED)
+        if not allowed:
+            return Response({"detail": "You cannot update this appointment."},
+                            status=status.HTTP_403_FORBIDDEN)
+        obj.status = new_status
+        obj.save(update_fields=["status", "updated_at"])
+        log_activity(request.user, ActivityLog.UPDATED, ActivityLog.RECORD,
+                     entity_type="Appointment", entity_label=obj.child.fullname,
+                     entity_id=obj.id, recipient=obj.psychologist)
+        return Response(AppointmentSerializer(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        return self._set_status(request, pk, Appointment.COMPLETED)
+
+    @action(detail=True, methods=["post"])
+    def no_show(self, request, pk=None):
+        return self._set_status(request, pk, Appointment.NO_SHOW)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        return self._set_status(request, pk, Appointment.CANCELLED)

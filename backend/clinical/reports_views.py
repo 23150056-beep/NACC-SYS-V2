@@ -80,6 +80,14 @@ class MonitoringListView(generics.GenericAPIView):
         children = list(children)
         ids = [c.id for c in children]
 
+        from django.utils import timezone as tz
+        from scheduling.models import Appointment
+        next_appt = {}
+        for a in (Appointment.objects
+                  .filter(child_id__in=ids, status=Appointment.SCHEDULED, start__gte=tz.now())
+                  .order_by("start")):
+            next_appt.setdefault(a.child_id, a.start)
+
         latest_result = {}
         for r in ResultEntry.objects.filter(child_id__in=ids).order_by("date", "id"):
             latest_result[r.child_id] = r
@@ -109,7 +117,8 @@ class MonitoringListView(generics.GenericAPIView):
                 "pre_assessment_status": "Answered" if completed else "Not yet",
                 "latest_classification": (res.classification or None) if res else None,
                 "last_activity": last_activity.isoformat() if last_activity else None,
-                "next_session": None,  # wired to appointments by the scheduling module
+                "next_session": (tz.localtime(next_appt[c.id]).strftime("%Y-%m-%d %H:%M")
+                                 if c.id in next_appt else None),
                 "report_count": report_counts.get(c.id, 0),
                 "pre_assessment_count": len(completed),
             })
