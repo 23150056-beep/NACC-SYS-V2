@@ -81,19 +81,45 @@ export default function Schedule() {
     }
   };
 
+  const openCreateBlock = () => {
+    setError('');
+    setBlockForm({ mode: 'weekly', weekday: 0, date: '', start_time: '09:00', end_time: '12:00', capacity: 2, psychologist: '' });
+  };
+
+  const openEditBlock = (b) => {
+    setError('');
+    setBlockForm({
+      id: b.id,
+      mode: b.date ? 'date' : 'weekly',
+      weekday: b.weekday ?? 0,
+      date: b.date || '',
+      start_time: String(b.start_time).slice(0, 5),
+      end_time: String(b.end_time).slice(0, 5),
+      capacity: b.capacity,
+      psychologist: b.psychologist,
+      psychologist_name: b.psychologist_name,
+    });
+  };
+
   const saveBlock = async (e) => {
     e.preventDefault();
     setError('');
+    if (!isPsych && !blockForm.id && !blockForm.psychologist) {
+      setError('Select which psychologist this availability belongs to.');
+      return;
+    }
+    const payload = {
+      weekday: blockForm.mode === 'weekly' ? Number(blockForm.weekday) : null,
+      date: blockForm.mode === 'date' ? blockForm.date : null,
+      start_time: blockForm.start_time, end_time: blockForm.end_time,
+      capacity: Number(blockForm.capacity) || 1,
+    };
+    // Owner is only set on create — editing never reassigns whose calendar a block belongs to.
+    if (!isPsych && !blockForm.id) payload.psychologist = blockForm.psychologist;
     try {
-      const payload = {
-        weekday: blockForm.mode === 'weekly' ? Number(blockForm.weekday) : null,
-        date: blockForm.mode === 'date' ? blockForm.date : null,
-        start_time: blockForm.start_time, end_time: blockForm.end_time,
-        capacity: Number(blockForm.capacity) || 1,
-      };
-      if (!isPsych) payload.psychologist = blockForm.psychologist;
-      await api.post('/availability/', payload);
-      toast.success('Availability added');
+      if (blockForm.id) await api.patch(`/availability/${blockForm.id}/`, payload);
+      else await api.post('/availability/', payload);
+      toast.success(blockForm.id ? 'Availability updated' : 'Availability added');
       setBlockForm(null); load();
     } catch (err) {
       setError(JSON.stringify(err.response?.data || 'Could not save availability.'));
@@ -123,7 +149,7 @@ export default function Schedule() {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          {isPsych && <Button variant="secondary" onClick={() => { setError(''); setBlockForm({ mode: 'weekly', weekday: 0, date: '', start_time: '09:00', end_time: '12:00', capacity: 2 }); }} iconLeft={<Icon name="clock" size={16} />}>Add Availability</Button>}
+          {(isPsych || role === 'Administrator') && <Button variant="secondary" onClick={openCreateBlock} iconLeft={<Icon name="clock" size={16} />}>Add Availability</Button>}
           {canBook && <Button variant="primary" onClick={() => { setError(''); setBooking({ child: '', psychologist: isPsych ? '' : '', date: '', time: '09:00', purpose: 'session', duration: 60, notes: '' }); }} iconLeft={<Icon name="plus" size={16} />}>Book Appointment</Button>}
         </div>
       </div>
@@ -163,7 +189,10 @@ export default function Schedule() {
                 </div>
                 <Badge tone="neutral" size="sm">{b.capacity} slot{b.capacity === 1 ? '' : 's'}</Badge>
                 {(isPsych || role === 'Administrator') && (
-                  <button title="Remove" onClick={() => removeBlock(b)} style={iconBtn('var(--red-500)')}><Icon name="trash-2" size={14} /></button>
+                  <>
+                    <button title="Edit" onClick={() => openEditBlock(b)} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={14} /></button>
+                    <button title="Remove" onClick={() => removeBlock(b)} style={iconBtn('var(--red-500)')}><Icon name="trash-2" size={14} /></button>
+                  </>
                 )}
               </div>
             ))}
@@ -225,9 +254,25 @@ export default function Schedule() {
       {blockForm && (
         <div onClick={() => setBlockForm(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 70 }}>
           <form onSubmit={saveBlock} onClick={(e) => e.stopPropagation()} style={{ width: 400, maxWidth: '92%', height: '100%', background: 'var(--surface)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', background: 'var(--ink-50)', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Add Availability</div>
+            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', background: 'var(--ink-50)', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>
+              {blockForm.id ? 'Edit Availability' : 'Add Availability'}
+            </div>
             <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
               {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{String(error)}</Alert>}
+              {!isPsych && (
+                blockForm.id ? (
+                  <FormField label="Psychologist">
+                    <Input value={blockForm.psychologist_name || ''} disabled />
+                  </FormField>
+                ) : (
+                  <FormField label="Psychologist" required hint="Who this availability belongs to.">
+                    <Select value={blockForm.psychologist} onChange={(e) => setBlockForm({ ...blockForm, psychologist: e.target.value })}>
+                      <option value="">— Select psychologist —</option>
+                      {psychologists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </Select>
+                  </FormField>
+                )
+              )}
               <FormField label="Repeat">
                 <Select value={blockForm.mode} onChange={(e) => setBlockForm({ ...blockForm, mode: e.target.value })}>
                   <option value="weekly">Every week</option>
@@ -254,7 +299,11 @@ export default function Schedule() {
               </FormField>
             </div>
             <div style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
-              <Button type="submit" variant="primary" fullWidth iconLeft={<Icon name="save" size={16} />}>Save Availability</Button>
+              <Button type="submit" variant="primary" fullWidth
+                disabled={!isPsych && !blockForm.id && !blockForm.psychologist}
+                iconLeft={<Icon name="save" size={16} />}>
+                {blockForm.id ? 'Save Changes' : 'Save Availability'}
+              </Button>
             </div>
           </form>
         </div>
