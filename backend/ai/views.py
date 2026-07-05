@@ -63,7 +63,12 @@ class PreSessionBriefView(APIView):
         result = child.result_entries.first()
         remarks = list(child.remarks.all()[:5])
         problems = list(child.problems.filter(resolved=False)[:6])
+        survey = child.opinionnaire_invites.filter(status="submitted").first()
+        survey_text = "\n".join(
+            f"- {q}: {str(a)[:300]}" for q, a in (survey.answers or {}).items()
+        ) if survey else "- not answered yet"
         prompt = prompts.BRIEF.format(
+            opinionnaire=survey_text,
             first_name=child.fullname.split(" ")[0] if child.fullname else "the child",
             case_type=child.case_type or "unspecified",
             pre_assessment=(f"{pa.date}, instruments: "

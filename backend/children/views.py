@@ -55,9 +55,10 @@ class ChildViewSet(_ArchivableViewSet):
     serializer_class = ChildSerializer
 
     def get_permissions(self):
-        # Terminate has its own rule (admin OR the child's assigned psychologist),
-        # enforced in the action body - RecordsAccess would block psychologists.
-        if self.action == "terminate":
+        # Terminate/advance have their own rule (admin OR the child's assigned
+        # psychologist), enforced in the action body - RecordsAccess would
+        # block psychologists.
+        if self.action in ("terminate", "advance_status"):
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -81,6 +82,29 @@ class ChildViewSet(_ArchivableViewSet):
             self.request.user, action_name, ActivityLog.RECORD,
             entity_type="Child", entity_label=getattr(obj, "fullname", ""),
             entity_id=obj.id, recipient=obj.assigned_psychologist)
+
+    @action(detail=True, methods=["post"], url_path="advance-status")
+    def advance_status(self, request, pk=None):
+        """Move the case tracker between pre_assessment and counseling.
+        Terminated is only reachable through the terminate action."""
+        child = self.get_object()
+        role = getattr(getattr(request.user, "role", None), "role_name", None)
+        allowed = (role == Role.ADMINISTRATOR) or (
+            role == Role.PSYCHOLOGIST and child.assigned_psychologist_id == request.user.id)
+        if not allowed:
+            return Response({"detail": "Only the assigned psychologist or an administrator can update the case status."},
+                            status=status.HTTP_403_FORBIDDEN)
+        if child.status == Child.INACTIVE:
+            return Response({"detail": "This case is terminated; reactivation is not supported."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        new_status = request.data.get("case_status")
+        if new_status not in (Child.STAGE_PRE_ASSESSMENT, Child.STAGE_COUNSELING):
+            return Response({"case_status": "Choose pre_assessment or counseling."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        child.case_status = new_status
+        child.save(update_fields=["case_status", "updated_at"])
+        self._log(child, ActivityLog.UPDATED)
+        return Response({"case_status": child.case_status}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
     def terminate(self, request, pk=None):
@@ -109,7 +133,8 @@ class ChildViewSet(_ArchivableViewSet):
             child=child, terminated_by=request.user,
             reason_category=reason, note=note)
         child.status = Child.INACTIVE
-        child.save(update_fields=["status", "updated_at"])
+        child.case_status = Child.STAGE_TERMINATED
+        child.save(update_fields=["status", "case_status", "updated_at"])
         self._log(child, ActivityLog.ARCHIVED)
         return Response({
             "status": "inactive",

@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Card, Button, Badge, Alert, Select, FormField, Icon, iconBtn, PAGE } from '../ui';
+
+const CASE_STATUS_META = {
+  pre_assessment: { label: 'Pre-Assessment', tone: 'amber' },
+  counseling: { label: 'Counseling', tone: 'brand' },
+  terminated: { label: 'Terminated', tone: 'neutral' },
+};
 
 const caseRef = (id) => `C-${String(id).padStart(4, '0')}`;
 const td = { padding: '10px 14px', fontSize: 13, color: 'var(--text-body)', whiteSpace: 'nowrap' };
@@ -22,17 +29,43 @@ export default function ChildProgressReport() {
   const [instruments, setInstruments] = useState([]);
   const [aiModal, setAiModal] = useState(null); // { title, draft, disclaimer, onConfirm? }
   const [aiBusy, setAiBusy] = useState(false);
+  const [qr, setQr] = useState(null); // { token, url }
+  const [surveyTemplates, setSurveyTemplates] = useState([]);
+  const isStaffOrAdmin = ['Administrator', 'Staff'].includes(user?.role_name);
 
   const load = () => api.get(`/reports/child/${id}/`).then((r) => setData(r.data)).catch(() => setData('error'));
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
   useEffect(() => { if (isPsych) api.get('/instruments/').then((r) => setInstruments(r.data)).catch(() => {}); }, [isPsych]);
+  useEffect(() => {
+    api.get('/form-templates/?type=self_report_gov').then((r) => setSurveyTemplates(r.data)).catch(() => {});
+  }, []);
 
   if (data === 'error') return <div style={PAGE}><Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>This report is unavailable.</Alert></div>;
   if (!data) return <div style={PAGE}><div style={{ color: 'var(--text-muted)' }}>Loading report…</div></div>;
 
   const { child } = data;
   const canWrite = isPsych && String(child.psychologist) === String(user?.id);
+  const canAdvance = canWrite || user?.role_name === 'Administrator';
   const activePlan = (data.treatment_plans || []).find((p) => p.status === 'active') || (data.treatment_plans || [])[0];
+  const csMeta = CASE_STATUS_META[child.case_status] || CASE_STATUS_META.pre_assessment;
+
+  const advance = async (next) => {
+    try {
+      await api.post(`/children/${id}/advance-status/`, { case_status: next });
+      toast.success(`Case moved to ${CASE_STATUS_META[next].label}`);
+      load();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Could not update the case status.'); }
+  };
+
+  const createInvite = async () => {
+    const tpl = surveyTemplates[0];
+    if (!tpl) { toast.error('Create a Self-Report (Government Form) template under Pre-Assessment Instruments first.'); return; }
+    try {
+      const { data: inv } = await api.post('/opinionnaire-invites/', { child: Number(id), template: tpl.id });
+      setQr({ token: inv.token, url: `${window.location.origin}/survey/${inv.token}`, title: tpl.title });
+      load();
+    } catch (err) { toast.error(JSON.stringify(err.response?.data || 'Could not create the survey link.')); }
+  };
 
   const addRemark = async () => {
     if (!remarkText.trim()) return;
@@ -47,6 +80,7 @@ export default function ChildProgressReport() {
       await api.post('/result-entries/', {
         child: Number(id), instrument: result.instrument || null,
         summary: result.summary, classification: result.classification,
+        baseline_category: result.baseline_category || '',
       });
       setResult(null); load(); toast.success('Result entry saved');
     } catch (err) { toast.error(JSON.stringify(err.response?.data || 'Could not save.')); }
@@ -132,10 +166,18 @@ export default function ChildProgressReport() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <Badge tone={csMeta.tone} dot>Case: {csMeta.label}</Badge>
             <Badge tone={child.pre_assessment_status === 'Answered' ? 'success' : 'amber'} dot>Pre-Assessment: {child.pre_assessment_status}</Badge>
             <Badge tone={child.status === 'active' ? 'success' : 'neutral'} dot>{child.status === 'active' ? 'Active' : 'Inactive (Terminated)'}</Badge>
           </div>
         </div>
+        {canAdvance && child.status === 'active' && (
+          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }} className="racco-no-print">
+            {child.case_status === 'pre_assessment'
+              ? <Button variant="primary" onClick={() => advance('counseling')} iconLeft={<Icon name="chevron-right" size={15} />}>Move to Counseling</Button>
+              : <Button variant="secondary" onClick={() => advance('pre_assessment')} iconLeft={<Icon name="arrow-left" size={15} />}>Back to Pre-Assessment</Button>}
+          </div>
+        )}
         {(child.instruments_used || []).length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
             {child.instruments_used.map((t) => <Badge key={t} tone="brand" size="sm">{t}</Badge>)}
@@ -171,10 +213,81 @@ export default function ChildProgressReport() {
         )}
       </Card>
 
+      {/* Child opinionnaire (QR survey) */}
+      <Card eyebrow="Child's voice" title="Opinionnaire (QR survey)" padding="20px" style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: (data.opinionnaires || []).length ? 14 : 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, maxWidth: 520 }}>
+            The child answers the agency&apos;s self-report opinionnaire on a secondary device via QR code.
+            Agency/government forms only — never published instruments.
+          </p>
+          {(isStaffOrAdmin || canWrite) && child.status === 'active' && (
+            <Button variant="primary" onClick={createInvite} iconLeft={<Icon name="qr-code" size={16} />} className="racco-no-print">New QR Survey</Button>
+          )}
+        </div>
+        {(data.opinionnaires || []).length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {data.opinionnaires.map((o) => (
+              <div key={o.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14, background: 'var(--ink-50)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: o.status === 'submitted' ? 8 : 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{o.template_title}</div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <Badge tone={o.status === 'submitted' ? 'success' : o.is_open ? 'amber' : 'neutral'} size="sm" dot>
+                      {o.status === 'submitted' ? `Answered ${String(o.submitted_at || '').slice(0, 10)}` : o.is_open ? 'Waiting for answers' : 'Expired'}
+                    </Badge>
+                    {o.is_open && (isStaffOrAdmin || canWrite) && (
+                      <Button variant="ghost" onClick={() => setQr({ token: o.token, url: `${window.location.origin}/survey/${o.token}`, title: o.template_title })} iconLeft={<Icon name="qr-code" size={14} />} className="racco-no-print">Show QR</Button>
+                    )}
+                  </div>
+                </div>
+                {o.status === 'submitted' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {Object.entries(o.answers || {}).map(([q, a]) => (
+                      <div key={q} style={{ fontSize: 13, lineHeight: 1.5 }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{q}</span>{' '}
+                        <span style={{ color: 'var(--text-strong)' }}>— {a}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Case studies (social worker's side of the split view) */}
+      <Card eyebrow="Casework" title="Case study (social worker)" padding="0" style={{ marginBottom: 18 }}>
+        {(data.case_studies || []).length === 0 ? (
+          <div style={{ padding: 18, fontSize: 13, color: 'var(--text-muted)' }}>
+            No case study uploaded yet. Social workers upload it from Results &amp; Reports.
+          </div>
+        ) : (
+          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.case_studies.map((f) => (
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: 'var(--ink-50)' }}>
+                <Icon name="folder-heart" size={18} style={{ color: 'var(--amber-500)' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.original_filename}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{f.description || 'Case study'} · {f.uploaded_by_name || '—'} · {(f.created_at || '').slice(0, 10)}</div>
+                </div>
+                <Button variant="ghost" onClick={async () => {
+                  try {
+                    const res = await api.get(`/case-studies/${f.id}/download/`, { responseType: 'blob' });
+                    const url = URL.createObjectURL(res.data);
+                    const a = document.createElement('a'); a.href = url; a.download = f.original_filename || 'case-study'; a.click();
+                    URL.revokeObjectURL(url);
+                  } catch { toast.error('Could not download the file.'); }
+                }} iconLeft={<Icon name="download" size={15} />} className="racco-no-print">Download</Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Result entries */}
       <Card eyebrow="Findings" title="Result entries (manual)" padding="0" style={{ marginBottom: 18 }}>
         <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'flex-end' }} className="racco-no-print">
-          {canWrite && <Button variant="primary" onClick={() => setResult({ instrument: '', summary: '', classification: '' })} iconLeft={<Icon name="plus" size={15} />}>Add Result Entry</Button>}
+          {canWrite && <Button variant="primary" onClick={() => setResult({ instrument: '', summary: '', classification: '', baseline_category: '' })} iconLeft={<Icon name="plus" size={15} />}>Add Result Entry</Button>}
         </div>
         {data.result_entries.length === 0 ? (
           <div style={{ padding: '0 18px 18px', fontSize: 13, color: 'var(--text-muted)' }}>No result entries yet — the psychologist records findings here after paper administration.</div>
@@ -185,6 +298,7 @@ export default function ChildProgressReport() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{r.instrument_title || 'General findings'}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {r.baseline_category && <Badge tone={r.baseline_category === 'Needs Counseling' ? 'amber' : 'success'} size="sm" dot>{r.baseline_category}</Badge>}
                     {r.classification && <Badge tone="brand" size="sm">{r.classification}</Badge>}
                     <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{r.date}</span>
                   </div>
@@ -315,6 +429,13 @@ export default function ChildProgressReport() {
                 {instruments.map((i) => <option key={i.id} value={i.id}>{i.title}</option>)}
               </Select>
             </FormField>
+            <FormField label="Baseline category" hint="Simple post-session verdict for the case tracker.">
+              <Select value={result.baseline_category || ''} onChange={(e) => setResult({ ...result, baseline_category: e.target.value })}>
+                <option value="">— Not set —</option>
+                <option>Needs Counseling</option>
+                <option>Good Assessment</option>
+              </Select>
+            </FormField>
             <FormField label="Findings summary" required>
               <textarea value={result.summary} onChange={(e) => setResult({ ...result, summary: e.target.value })} rows={7} style={textarea} placeholder="Findings in your own words…" />
             </FormField>
@@ -323,6 +444,24 @@ export default function ChildProgressReport() {
             </FormField>
             <Button variant="primary" onClick={saveResult} disabled={!result.summary.trim()} iconLeft={<Icon name="save" size={16} />}>Save entry</Button>
             <div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Manual input only — the system never computes scores.</div>
+          </div>
+        </div>
+      )}
+
+      {/* QR modal */}
+      {qr && (
+        <div onClick={() => setQr(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 90 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 380, maxWidth: '92%', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', padding: 24, textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)', marginBottom: 4 }}>Scan to answer</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16 }}>{qr.title} — hand the second device to the child.</div>
+            <div style={{ display: 'inline-block', padding: 14, background: '#fff', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+              <QRCodeSVG value={qr.url} size={200} />
+            </div>
+            <div className="racco-mono" style={{ fontSize: 11, color: 'var(--text-muted)', margin: '12px 0 16px', wordBreak: 'break-all' }}>{qr.url}</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button variant="secondary" fullWidth onClick={() => { navigator.clipboard?.writeText(qr.url); toast.success('Link copied'); }}>Copy link</Button>
+              <Button variant="primary" fullWidth onClick={() => setQr(null)}>Done</Button>
+            </div>
           </div>
         </div>
       )}

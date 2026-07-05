@@ -36,13 +36,15 @@ class ChildSerializer(serializers.ModelSerializer):
         fields = [
             "id", "fullname", "birth_date", "gender",
             "province", "municipality", "barangay", "address",
-            "case_type", "surrendered_by", "status", "assignee_sees_history",
+            "case_type", "surrendered_by", "status", "case_status", "assignee_sees_history",
             "photo", "referral_source", "referral_reason",
             "education_level", "current_placement", "medical_notes",
             "psychologist", "psychologist_name",
             "guardian", "guardian_name", "termination",
             "pre_assessment_status", "instruments_used",
         ]
+        # The tracker moves only through the advance-status / terminate actions.
+        read_only_fields = ["case_status"]
 
     def get_pre_assessment_status(self, obj):
         return "Answered" if any(

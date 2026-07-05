@@ -39,7 +39,7 @@ export default function Monitoring() {
             <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontFamily: 'var(--font-sans)' }}>
               <thead>
                 <tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                  {['Child', 'Case Type', 'Psychologist', 'Pre-Assessment', 'Latest Classification', 'Last Activity', 'Reports'].map((h) => (
+                  {['Child', 'Case Status', 'Psychologist', 'Pre-Assessment', 'Latest Classification', 'Last Activity', 'Next Session'].map((h) => (
                     <th key={h} scope="col" style={{ textAlign: 'left', padding: '11px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -58,12 +58,12 @@ export default function Monitoring() {
                         <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--blue-700)', whiteSpace: 'nowrap' }}>{r.child_name}</div>
                         <div className="racco-mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.case_ref}</div>
                       </td>
-                      <td style={td}>{r.case_type || '—'}</td>
+                      <td style={td}>{r.case_status === 'counseling' ? 'Counseling' : r.case_status === 'terminated' ? 'Terminated' : 'Pre-Assessment'}{r.case_type ? ` · ${r.case_type}` : ''}</td>
                       <td style={td}>{r.psychologist_name || '—'}</td>
                       <td style={td}>{r.pre_assessment_status}</td>
                       <td style={td}>{r.latest_classification || '—'}</td>
                       <td style={td}>{r.last_activity || '—'}</td>
-                      <td style={td}>{r.report_count}</td>
+                      <td style={td}>{r.next_session || '—'}</td>
                     </tr>
                   );
                 })}

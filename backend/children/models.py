@@ -31,6 +31,17 @@ class Child(models.Model):
     ARCHIVED = INACTIVE
     STATUS_CHOICES = [(ACTIVE, "Active"), (INACTIVE, "Inactive")]
 
+    # Linear case tracker (blueprint milestones): the psychologist advances
+    # pre_assessment -> counseling; terminate sets terminated (and inactive).
+    STAGE_PRE_ASSESSMENT = "pre_assessment"
+    STAGE_COUNSELING = "counseling"
+    STAGE_TERMINATED = "terminated"
+    CASE_STATUS_CHOICES = [
+        (STAGE_PRE_ASSESSMENT, "Pre-Assessment"),
+        (STAGE_COUNSELING, "Counseling"),
+        (STAGE_TERMINATED, "Terminated"),
+    ]
+
     # V2 case types per the psychologist interview ("active/adoption,
     # active/foster care"). Final list pending RACCO I confirmation.
     CASE_TYPE_CHOICES = [
@@ -71,6 +82,8 @@ class Child(models.Model):
     case_type = models.CharField(max_length=150, blank=True, choices=CASE_TYPE_CHOICES)
     surrendered_by = models.CharField(max_length=50, blank=True, choices=SURRENDERED_BY_CHOICES)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ACTIVE)
+    case_status = models.CharField(
+        max_length=20, choices=CASE_STATUS_CHOICES, default=STAGE_PRE_ASSESSMENT)
     # V2 profiling fields (exact list pending confirmation with the psychologist).
     photo = models.ImageField(upload_to="children/photos/", null=True, blank=True)
     referral_source = models.CharField(max_length=150, blank=True)

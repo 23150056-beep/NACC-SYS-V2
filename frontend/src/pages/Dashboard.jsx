@@ -8,10 +8,11 @@ import { useActivity } from '../context/ActivityContext';
 import { eventText, timeAgo } from '../components/Topbar';
 
 const EMPTY = {
-  census: { active: 0, inactive: 0, by_case_type: {} },
+  census: { active: 0, inactive: 0, by_case_type: {}, by_case_status: {} },
   total_children: 0, unassessed: 0, pending_pre_assessments: 0,
   today_schedule: [], availability_today: [], intake_vs_termination: [],
   trend: [], per_psychologist: [], by_case_type: {}, care_gaps: [],
+  counseling_per_psychologist: [],
 };
 const PURPOSE_LABEL = { pre_assessment: 'Pre-Assessment', session: 'Session', follow_up: 'Follow-up' };
 const GAP_TONE = { danger: 'var(--red-500)', warning: 'var(--amber-500)', info: 'var(--blue-400)' };
@@ -94,9 +95,9 @@ export default function Dashboard() {
       {/* Census stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 16, marginBottom: 20 }}>
         <StatCard label={isPsychologist ? 'My Active Cases' : 'Active Children'} value={census.active} tone="success" icon={<Icon name="users" size={18} />} />
+        <StatCard label="In Counseling" value={(census.by_case_status || {}).counseling || 0} tone="brand" icon={<Icon name="heart-pulse" size={18} />} hint={`${(census.by_case_status || {}).pre_assessment || 0} in pre-assessment`} />
         <StatCard label="Inactive (Terminated)" value={census.inactive} tone="brand" icon={<Icon name="archive" size={18} />} />
         <StatCard label="Pending Pre-Assessments" value={stats.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} hint={stats.unassessed ? `${stats.unassessed} not yet assessed` : undefined} />
-        <StatCard label="Sessions This Month" value={sessionsThisPeriod} tone="brand" icon={<Icon name="clipboard-check" size={18} />} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20, marginBottom: 20 }}>
@@ -161,6 +162,16 @@ export default function Dashboard() {
                   <span className="racco-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue-600)' }}>{p.count}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {(stats.counseling_per_psychologist || []).length > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Cases in counseling</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {stats.counseling_per_psychologist.map((p) => (
+                  <Badge key={p.name} tone="brand" size="sm" dot>{p.name} · {p.count}</Badge>
+                ))}
+              </div>
             </div>
           )}
         </Card>

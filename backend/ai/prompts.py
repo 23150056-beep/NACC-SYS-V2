@@ -16,6 +16,9 @@ Latest result entry: {latest_result}
 Open problems: {problems}
 Recent remarks:
 {remarks}
+Child's own answers to the agency self-report opinionnaire (verbatim; note any
+recurring emotional keywords or distress indicators):
+{opinionnaire}
 """
 
 DOC_INTELLIGENCE = """From the psychologist's own report text below, draft:

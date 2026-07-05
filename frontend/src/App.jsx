@@ -19,6 +19,7 @@ import Users from './pages/Users';
 import Instruments from './pages/Instruments';
 import PreAssessment from './pages/PreAssessment';
 import Schedule from './pages/Schedule';
+import Survey from './pages/Survey';
 
 function Shell({ children }) {
   return (
@@ -40,6 +41,8 @@ export default function App() {
         <BrowserRouter>
           <Routes>
           <Route path="/login" element={<Login />} />
+          {/* Public, token-gated child opinionnaire (opened via QR code). */}
+          <Route path="/survey/:token" element={<Survey />} />
           <Route path="/" element={<ProtectedRoute><Shell><Dashboard /></Shell></ProtectedRoute>} />
           <Route path="/children" element={<ProtectedRoute roles={['Administrator', 'Staff', 'Psychologist']}><Shell><Children /></Shell></ProtectedRoute>} />
           <Route path="/instruments" element={<ProtectedRoute roles={INSTRUMENT_MANAGER_ROLES}><Shell><Instruments /></Shell></ProtectedRoute>} />

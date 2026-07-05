@@ -198,6 +198,32 @@ class PsychologicalReport(models.Model):
         ordering = ["-created_at"]
 
 
+def case_study_upload_path(instance, filename):
+    ext = (filename.rsplit(".", 1)[-1] if "." in filename else "bin").lower()
+    return f"case-studies/{uuid.uuid4().hex}.{ext}"
+
+
+class CaseStudy(models.Model):
+    """The social worker's official case study document for a child.
+    Uploaded by staff/admin, viewable by the assigned psychologist —
+    the other half of the split-view document area."""
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="case_studies")
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="case_studies_uploaded")
+    file = models.FileField(upload_to=case_study_upload_path)
+    original_filename = models.CharField(max_length=255, blank=True)
+    description = models.CharField(max_length=255, blank=True)
+    extracted_text = models.TextField(blank=True)
+    ai_summary = models.TextField(null=True, blank=True)
+    ai_summary_confirmed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "tbl_case_study"
+        ordering = ["-created_at"]
+
+
 class RemarkNote(models.Model):
     """Psychological remark notes, manually added (replaces v1 session notes)."""
     child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="remarks")
@@ -248,6 +274,13 @@ class ResultEntry(models.Model):
     summary = models.TextField(help_text="Findings in the psychologist's own words")
     classification = models.CharField(max_length=150, blank=True,
                                       help_text="Free-text classification, the psychologist's own words")
+    # Post-session baseline category (blueprint): a simple two-option verdict.
+    NEEDS_COUNSELING = "Needs Counseling"
+    GOOD_ASSESSMENT = "Good Assessment"
+    BASELINE_CHOICES = [(NEEDS_COUNSELING, NEEDS_COUNSELING),
+                        (GOOD_ASSESSMENT, GOOD_ASSESSMENT)]
+    baseline_category = models.CharField(
+        max_length=30, choices=BASELINE_CHOICES, blank=True)
     date = models.DateField(default=timezone.localdate)
     entered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -257,6 +290,42 @@ class ResultEntry(models.Model):
     class Meta:
         db_table = "tbl_result_entry"
         ordering = ["-date", "-id"]
+
+
+def _invite_token():
+    return uuid.uuid4().hex
+
+
+class OpinionnaireInvite(models.Model):
+    """A single-use, tokenized link (rendered as a QR code) that lets a child
+    answer the agency's self-report opinionnaire on a secondary device.
+    Templates are restricted to agency/government self-report forms —
+    never published instruments (copyright policy §2)."""
+    PENDING = "pending"
+    SUBMITTED = "submitted"
+    EXPIRED = "expired"
+    STATUS_CHOICES = [(PENDING, "Pending"), (SUBMITTED, "Submitted"), (EXPIRED, "Expired")]
+
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="opinionnaire_invites")
+    template = models.ForeignKey(
+        AgencyFormTemplate, on_delete=models.CASCADE, related_name="opinionnaire_invites")
+    token = models.CharField(max_length=64, unique=True, default=_invite_token, editable=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING)
+    answers = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="opinionnaire_invites_created")
+    expires_at = models.DateTimeField()
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "tbl_opinionnaire_invite"
+        ordering = ["-created_at"]
+
+    @property
+    def is_open(self):
+        return self.status == self.PENDING and timezone.now() < self.expires_at
 
 
 class ProblemEntry(models.Model):

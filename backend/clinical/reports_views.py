@@ -12,11 +12,12 @@ from children.serializers import ChildSerializer
 from clinical import reports
 from clinical.models import (
     PreAssessment, ResultEntry, RemarkNote, TreatmentPlan,
-    PsychologicalReport, ProblemEntry,
+    PsychologicalReport, ProblemEntry, CaseStudy, OpinionnaireInvite,
 )
 from clinical.serializers import (
     PreAssessmentSerializer, ResultEntrySerializer, RemarkNoteSerializer,
     TreatmentPlanSerializer, PsychologicalReportSerializer, ProblemEntrySerializer,
+    CaseStudySerializer, OpinionnaireInviteSerializer,
 )
 
 
@@ -44,6 +45,8 @@ class ChildReportView(generics.GenericAPIView):
         plans = child.treatment_plans.select_related("author")
         files = child.psych_reports.select_related("author")
         problems = child.problems.all()
+        case_studies = child.case_studies.select_related("uploaded_by")
+        opinionnaires = child.opinionnaire_invites.select_related("template")
 
         # Carry-history control: a newly assigned psychologist without history
         # sees only records they authored themselves.
@@ -62,6 +65,8 @@ class ChildReportView(generics.GenericAPIView):
             "treatment_plans": TreatmentPlanSerializer(plans, many=True).data,
             "reports": PsychologicalReportSerializer(files, many=True).data,
             "problems": ProblemEntrySerializer(problems, many=True).data,
+            "case_studies": CaseStudySerializer(case_studies, many=True).data,
+            "opinionnaires": OpinionnaireInviteSerializer(opinionnaires, many=True).data,
         })
 
 
@@ -114,6 +119,7 @@ class MonitoringListView(generics.GenericAPIView):
                 "case_ref": f"C-{c.id:04d}",
                 "case_type": c.case_type or None,
                 "psychologist_name": (getattr(psy, "fullname", "") or getattr(psy, "username", "")) or None,
+                "case_status": c.case_status,
                 "pre_assessment_status": "Answered" if completed else "Not yet",
                 "latest_classification": (res.classification or None) if res else None,
                 "last_activity": last_activity.isoformat() if last_activity else None,
@@ -231,11 +237,19 @@ class DashboardView(generics.GenericAPIView):
         inactive_count = scoped_children.filter(status=Child.INACTIVE).count()
 
         # Census: ACTIVE children per case type (the interview's
-        # "active/adoption, active/foster care" view).
+        # "active/adoption, active/foster care" view) + case-tracker stages.
         census_by_case_type = {}
-        for c in active:
+        by_case_status = {Child.STAGE_PRE_ASSESSMENT: 0, Child.STAGE_COUNSELING: 0}
+        counseling_per_psy = {}
+        for c in active.select_related("assigned_psychologist"):
             ct = c.case_type or "Unspecified"
             census_by_case_type[ct] = census_by_case_type.get(ct, 0) + 1
+            if c.case_status in by_case_status:
+                by_case_status[c.case_status] += 1
+            if c.case_status == Child.STAGE_COUNSELING and c.assigned_psychologist_id:
+                name = (getattr(c.assigned_psychologist, "fullname", "")
+                        or getattr(c.assigned_psychologist, "username", ""))
+                counseling_per_psy[name] = counseling_per_psy.get(name, 0) + 1
 
         # Intake vs termination trend (monthly, last 6 buckets).
         intake, term = {}, {}
@@ -286,7 +300,11 @@ class DashboardView(generics.GenericAPIView):
                 "active": active.count(),
                 "inactive": inactive_count,
                 "by_case_type": census_by_case_type,
+                "by_case_status": by_case_status,
             },
+            "counseling_per_psychologist": [
+                {"name": k, "count": v}
+                for k, v in sorted(counseling_per_psy.items(), key=lambda kv: -kv[1])],
             "total_children": active.count(),
             "unassessed": max(0, active.count() - len({p.child_id for p in pas})),
             "pending_pre_assessments": pending.count(),

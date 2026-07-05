@@ -4,7 +4,8 @@ from django.utils import timezone
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
     ClinicalInterviewRecord, ProblemEntry, PreAssessment,
-    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry,
+    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry, CaseStudy,
+    OpinionnaireInvite,
 )
 
 ALLOWED_REPORT_EXTENSIONS = ("pdf", "doc", "docx")
@@ -130,6 +131,31 @@ class PsychologicalReportSerializer(serializers.ModelSerializer):
         return f
 
 
+class CaseStudySerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.fullname", read_only=True)
+    uploaded_by_name = serializers.CharField(source="uploaded_by.fullname", read_only=True, default=None)
+    has_text = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CaseStudy
+        fields = ["id", "child", "child_name", "uploaded_by", "uploaded_by_name",
+                  "file", "original_filename", "description",
+                  "ai_summary", "ai_summary_confirmed", "has_text", "created_at"]
+        read_only_fields = ["uploaded_by", "original_filename", "ai_summary", "ai_summary_confirmed"]
+        extra_kwargs = {"file": {"write_only": True}}
+
+    def get_has_text(self, obj):
+        return bool(obj.extracted_text)
+
+    def validate_file(self, f):
+        ext = (f.name.rsplit(".", 1)[-1] if "." in f.name else "").lower()
+        if ext not in ALLOWED_REPORT_EXTENSIONS:
+            raise serializers.ValidationError("Upload a PDF or Word document (.pdf, .doc, .docx).")
+        if f.size > MAX_REPORT_BYTES:
+            raise serializers.ValidationError("File too large (max 15 MB).")
+        return f
+
+
 class RemarkNoteSerializer(serializers.ModelSerializer):
     child_name = serializers.CharField(source="child.fullname", read_only=True)
     author_name = serializers.CharField(source="author.fullname", read_only=True, default=None)
@@ -163,7 +189,7 @@ class ResultEntrySerializer(serializers.ModelSerializer):
         model = ResultEntry
         fields = ["id", "child", "child_name", "child_case_type", "pre_assessment",
                   "instrument", "instrument_title", "summary", "classification",
-                  "date", "entered_by", "entered_by_name", "created_at"]
+                  "baseline_category", "date", "entered_by", "entered_by_name", "created_at"]
         read_only_fields = ["entered_by"]
 
     def validate(self, attrs):
@@ -173,6 +199,30 @@ class ResultEntrySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"pre_assessment": "That pre-assessment belongs to a different child."})
         return attrs
+
+
+class OpinionnaireInviteSerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.fullname", read_only=True)
+    template_title = serializers.CharField(source="template.title", read_only=True)
+    is_open = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = OpinionnaireInvite
+        fields = ["id", "child", "child_name", "template", "template_title",
+                  "token", "status", "answers", "is_open",
+                  "expires_at", "submitted_at", "created_at"]
+        read_only_fields = ["token", "status", "answers", "expires_at", "submitted_at"]
+
+    def validate_template(self, tpl):
+        # Copyright boundary: only agency/government self-report forms may be
+        # administered digitally.
+        if tpl.form_type != AgencyFormTemplate.SELF_REPORT_GOV:
+            raise serializers.ValidationError(
+                "Only agency/government self-report forms can be sent to a child. "
+                "Published instruments stay on paper.")
+        if not tpl.active:
+            raise serializers.ValidationError("That form template is inactive.")
+        return tpl
 
 
 class ProblemEntrySerializer(serializers.ModelSerializer):
