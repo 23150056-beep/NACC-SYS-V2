@@ -36,7 +36,7 @@ class ChildSerializer(serializers.ModelSerializer):
         fields = [
             "id", "fullname", "birth_date", "gender",
             "province", "municipality", "barangay", "address",
-            "case_type", "surrendered_by", "status", "case_status", "assignee_sees_history",
+            "case_type", "case_category", "surrendered_by", "status", "case_status", "assignee_sees_history",
             "photo", "referral_source", "referral_reason",
             "education_level", "current_placement", "medical_notes",
             "psychologist", "psychologist_name",

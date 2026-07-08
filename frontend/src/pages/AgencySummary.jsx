@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { Card, StatCard, Button, Badge, Alert, Icon, PAGE } from '../ui';
 
 const RANGES = ['weekly', 'monthly', 'yearly'];
-const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [], terminations_by_reason: {}, pending_pre_assessments: 0, caseload_per_psychologist: [] };
+const EMPTY = { total: 0, children: 0, by_case_type: {}, per_psychologist: [], trend: [], terminations_by_reason: {}, pending_pre_assessments: 0, caseload_per_psychologist: [], nacc_service_users: { age_groups: [], case_categories: [] } };
 
 export default function AgencySummary() {
   const toast = useToast();
@@ -108,6 +108,39 @@ export default function AgencySummary() {
           </div>
         </Card>
       </div>
+
+      <Card eyebrow="NACC-SAMD reporting" title="Service users (current)" padding="20px" style={{ marginBottom: 20 }}>
+        <div className="racco-scroll" style={{ overflowX: 'auto', marginBottom: 14 }}>
+          <table style={{ width: '100%', minWidth: 480, borderCollapse: 'collapse' }}>
+            <thead><tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
+              {['Age Group', 'Male', 'Female', 'Total'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {(d.nacc_service_users?.age_groups || []).length === 0
+                ? <tr><td colSpan={4} style={{ padding: 16, color: 'var(--text-faint)', fontSize: 13 }}>No active children.</td></tr>
+                : d.nacc_service_users.age_groups.map((g) => (
+                  <tr key={g.label} style={{ borderBottom: '1px solid var(--ink-100)' }}>
+                    <td style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{g.label}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-body)' }}>{g.male}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-body)' }}>{g.female}</td>
+                    <td className="racco-mono" style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: 'var(--blue-600)' }}>{g.total}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>By case category</div>
+        {(d.nacc_service_users?.case_categories || []).length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No active children.</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {d.nacc_service_users.case_categories.map((c) => <Badge key={c.label} tone="neutral">{c.label} · {c.count}</Badge>)}
+          </div>
+        )}
+        <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 14 }}>
+          Mirrors the Service Users block of the NACC certification form (NACC-SAMD-GF-000, June 2025).
+        </div>
+      </Card>
 
       <Card eyebrow="Case closure" title="Terminations by reason" padding="20px" style={{ marginBottom: 20 }}>
         {Object.keys(d.terminations_by_reason || {}).length === 0 ? (

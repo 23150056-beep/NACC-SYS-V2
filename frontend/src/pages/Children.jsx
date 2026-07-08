@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useActivity } from '../context/ActivityContext';
 import { Card, Button, Badge, Input, Select, FormField, Avatar, Alert, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
-import { CASE_TYPES, SURRENDERED_BY, TERMINATION_REASONS, PROVINCES, MUNICIPALITIES, BARANGAYS } from '../config/caseData';
+import { CASE_TYPES, CASE_CATEGORIES, SURRENDERED_BY, TERMINATION_REASONS, PROVINCES, MUNICIPALITIES, BARANGAYS } from '../config/caseData';
 
 function ageFrom(birth) {
   if (!birth) return null;
@@ -33,7 +33,7 @@ function StatusChip({ child, size = 'sm' }) {
 
 const EMPTY = {
   fullname: '', birth_date: '', gender: '', province: '', municipality: '', barangay: '',
-  case_type: '', surrendered_by: '', psychologist: '', assignee_sees_history: true,
+  case_type: '', case_category: '', surrendered_by: '', psychologist: '', assignee_sees_history: true,
   referral_source: '', referral_reason: '', education_level: '', current_placement: '', medical_notes: '',
 };
 
@@ -248,6 +248,7 @@ function ChildDrawer({ child, canManage, canTerminate, onEdit, onTerminate, onCl
     ['Gender', child.gender || '—'],
     ['Age', child.age != null ? `${child.age} years old (${child.group})` : '—'],
     ['Case Type', child.case_type || '—'],
+    ['Case Category (NACC)', child.case_category || '—'],
     ['Assigned Psychologist', child.psychologist_name || '—'],
     ['Surrendered By', child.surrendered_by || '—'],
     ['Location', location],
@@ -342,7 +343,7 @@ function TerminateModal({ child, onConfirm, onClose }) {
             {TERMINATION_REASONS.map((r) => <option key={r}>{r}</option>)}
           </Select>
         </FormField>
-        <FormField label="Reason note" required>
+        <FormField label="Closing summary" required>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} placeholder="Describe why this case is being terminated…"
             style={{ width: '100%', resize: 'vertical', padding: '11px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 14, lineHeight: 1.55 }} />
         </FormField>
@@ -421,6 +422,12 @@ function ChildForm({ form, setForm, psychologists, error, onSubmit, onClose }) {
             <Select value={form.case_type || ''} onChange={(e) => setForm({ ...form, case_type: e.target.value })}>
               <option value="">— Select case type —</option>
               {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </Select>
+          </FormField>
+          <FormField label="Case Category (NACC)">
+            <Select value={form.case_category || ''} onChange={(e) => setForm({ ...form, case_category: e.target.value })}>
+              <option value="">— Select case category —</option>
+              {CASE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
             </Select>
           </FormField>
           <FormField label="Who Surrendered the Child">

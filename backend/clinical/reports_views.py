@@ -132,6 +132,70 @@ class MonitoringListView(generics.GenericAPIView):
         return Response(rows)
 
 
+def _nacc_service_users():
+    """Point-in-time census block mirroring the "Service Users" section of
+    NACC-SAMD-GF-000 (June 2025). Always computed over ACTIVE children —
+    unlike the rest of the summary, it is NOT filtered by the `range` param."""
+    from django.utils import timezone as tz
+    today = tz.localdate()
+
+    def age_of(birth_date):
+        if not birth_date:
+            return None
+        return today.year - birth_date.year - (
+            (today.month, today.day) < (birth_date.month, birth_date.day))
+
+    bands = [
+        ("Infants and Young Children (0-6)", 0, 6),
+        ("Middle Childhood (7-11)", 7, 11),
+        ("Adolescents (12-17)", 12, 17),
+        ("Young Adults (18+)", 18, None),
+    ]
+    age_rows = {label: {"label": label, "male": 0, "female": 0, "total": 0} for label, _, _ in bands}
+    unspecified_age_row = {"label": "Unspecified age", "male": 0, "female": 0, "total": 0}
+    has_unspecified_age = False
+
+    category_counts = {}
+    unspecified_category_count = 0
+
+    for c in Child.objects.filter(status=Child.ACTIVE):
+        age = age_of(c.birth_date)
+        row = None
+        if age is not None:
+            for label, lo, hi in bands:
+                if age >= lo and (hi is None or age <= hi):
+                    row = age_rows[label]
+                    break
+        if row is None:
+            row = unspecified_age_row
+            has_unspecified_age = True
+        if c.gender == "Male":
+            row["male"] += 1
+        elif c.gender == "Female":
+            row["female"] += 1
+        row["total"] += 1
+
+        if c.case_category:
+            category_counts[c.case_category] = category_counts.get(c.case_category, 0) + 1
+        else:
+            unspecified_category_count += 1
+
+    age_groups = [age_rows[label] for label, _, _ in bands]
+    if has_unspecified_age:
+        age_groups.append(unspecified_age_row)
+
+    # Preserve the official form order; drop zero-count categories.
+    case_categories = [
+        {"label": label, "count": category_counts[label]}
+        for label, _ in Child.CASE_CATEGORY_CHOICES
+        if category_counts.get(label)
+    ]
+    if unspecified_category_count:
+        case_categories.append({"label": "Unspecified", "count": unspecified_category_count})
+
+    return {"age_groups": age_groups, "case_categories": case_categories}
+
+
 def _summary_csv(data):
     import csv
     from django.http import HttpResponse
@@ -154,6 +218,16 @@ def _summary_csv(data):
     w.writerow(["Termination reason", "Count"])
     for k, v in data["terminations_by_reason"].items():
         w.writerow([k, v])
+    w.writerow([])
+    w.writerow(["NACC Service Users by Age Group"])
+    w.writerow(["Age Group", "Male", "Female", "Total"])
+    for row in data["nacc_service_users"]["age_groups"]:
+        w.writerow([row["label"], row["male"], row["female"], row["total"]])
+    w.writerow([])
+    w.writerow(["NACC Service Users by Case Category"])
+    w.writerow(["Category", "Count"])
+    for row in data["nacc_service_users"]["case_categories"]:
+        w.writerow([row["label"], row["count"]])
     return resp
 
 
@@ -195,6 +269,7 @@ class SummaryReportView(generics.GenericAPIView):
         data["caseload_per_psychologist"] = [
             {"name": k, "caseload": v}
             for k, v in sorted(caseload.items(), key=lambda kv: -kv[1])]
+        data["nacc_service_users"] = _nacc_service_users()
 
         # NB: `format` is reserved by DRF content negotiation, so use `export`.
         if request.query_params.get("export") == "csv":

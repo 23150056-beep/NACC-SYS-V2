@@ -55,3 +55,29 @@ class ChildApiTest(APITestCase):
             "fullname": "Maria Cruz", "case_type": "Foster"})
         self.assertEqual(resp.status_code, 201)
         self.assertTrue(Guardian.objects.filter(fullname="Maria Cruz").exists())
+
+    def test_create_child_with_valid_case_category_persists_and_returns_it(self):
+        self._auth("staff@racco1.gov.ph", "staff1234")
+        resp = self.client.post("/api/children/", {
+            "fullname": "Nico Reyes", "gender": "Male", "case_category": "Abandoned"})
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["case_category"], "Abandoned")
+        child = Child.objects.get(fullname="Nico Reyes")
+        self.assertEqual(child.case_category, "Abandoned")
+
+    def test_update_child_with_valid_case_category_persists_and_returns_it(self):
+        self._auth("staff@racco1.gov.ph", "staff1234")
+        child = Child.objects.create(fullname="Lena Santos")
+        resp = self.client.put(f"/api/children/{child.id}/", {
+            "fullname": "Lena Santos", "case_category": "Neglected"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["case_category"], "Neglected")
+        child.refresh_from_db()
+        self.assertEqual(child.case_category, "Neglected")
+
+    def test_invalid_case_category_rejected(self):
+        self._auth("staff@racco1.gov.ph", "staff1234")
+        resp = self.client.post("/api/children/", {
+            "fullname": "Bad Category", "case_category": "Not A Real Category"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("case_category", resp.data)

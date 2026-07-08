@@ -115,6 +115,72 @@ class SummaryTest(ReportsBase):
         self.assertIn("Completed pre-assessments", resp.content.decode())
 
 
+class NaccServiceUsersTest(ReportsBase):
+    """Point-in-time census block (NACC-SAMD-GF-000 "Service Users" section).
+    self.child ("Ana", from ReportsBase) has no birth_date/gender/case_category
+    and is active — she should land in the "Unspecified" buckets."""
+
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone as tz
+        today = tz.localdate()
+
+        def years_ago(n):
+            return today.replace(year=today.year - n)
+
+        self.infant = Child.objects.create(
+            fullname="Infant One", gender="Male",
+            birth_date=years_ago(3), case_category="Abandoned")
+        self.middle = Child.objects.create(
+            fullname="Middle One", gender="Female",
+            birth_date=years_ago(9), case_category="Neglected")
+        self.teen = Child.objects.create(
+            fullname="Teen One", gender="Male",
+            birth_date=years_ago(15), case_category="Abandoned")
+        self.adult = Child.objects.create(
+            fullname="Adult One", gender="Female",
+            birth_date=years_ago(20))
+        # Inactive: same profile as the infant, but must be excluded entirely.
+        Child.objects.create(
+            fullname="Inactive One", gender="Male",
+            birth_date=years_ago(5), case_category="Abandoned", status=Child.INACTIVE)
+
+    def test_age_group_math_excludes_inactive(self):
+        self._auth("a@racco1.gov.ph")
+        resp = self.client.get("/api/reports/summary/")
+        self.assertEqual(resp.status_code, 200)
+        by_label = {g["label"]: g for g in resp.data["nacc_service_users"]["age_groups"]}
+        self.assertEqual(by_label["Infants and Young Children (0-6)"],
+                          {"label": "Infants and Young Children (0-6)", "male": 1, "female": 0, "total": 1})
+        self.assertEqual(by_label["Middle Childhood (7-11)"],
+                          {"label": "Middle Childhood (7-11)", "male": 0, "female": 1, "total": 1})
+        self.assertEqual(by_label["Adolescents (12-17)"],
+                          {"label": "Adolescents (12-17)", "male": 1, "female": 0, "total": 1})
+        self.assertEqual(by_label["Young Adults (18+)"],
+                          {"label": "Young Adults (18+)", "male": 0, "female": 1, "total": 1})
+        # Ana has no birth_date -> unspecified age; the inactive child never appears.
+        self.assertEqual(by_label["Unspecified age"],
+                          {"label": "Unspecified age", "male": 0, "female": 0, "total": 1})
+
+    def test_case_category_counts_include_unspecified_bucket(self):
+        self._auth("a@racco1.gov.ph")
+        resp = self.client.get("/api/reports/summary/")
+        cats = {c["label"]: c["count"] for c in resp.data["nacc_service_users"]["case_categories"]}
+        self.assertEqual(cats["Abandoned"], 2)  # infant + teen; inactive one excluded
+        self.assertEqual(cats["Neglected"], 1)
+        self.assertEqual(cats["Unspecified"], 2)  # Ana + Adult One (blank case_category)
+        self.assertNotIn("Foundling", cats)  # zero-count categories are omitted
+
+    def test_csv_contains_nacc_service_users_sections(self):
+        self._auth("s@racco1.gov.ph")
+        resp = self.client.get("/api/reports/summary/?export=csv")
+        content = resp.content.decode()
+        self.assertIn("NACC Service Users by Age Group", content)
+        self.assertIn("NACC Service Users by Case Category", content)
+        self.assertIn("Infants and Young Children (0-6)", content)
+        self.assertIn("Abandoned", content)
+
+
 class DashboardTest(ReportsBase):
     def test_admin_dashboard(self):
         self._auth("a@racco1.gov.ph")

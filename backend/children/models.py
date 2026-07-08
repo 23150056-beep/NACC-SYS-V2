@@ -43,7 +43,10 @@ class Child(models.Model):
     ]
 
     # V2 case types per the psychologist interview ("active/adoption,
-    # active/foster care"). Final list pending RACCO I confirmation.
+    # active/foster care"). This placement-track list is now corroborated by
+    # NACC-SAMD-GF-000 KRA III (transition strategies: adoption, kinship/foster
+    # care, family reunification, independent living); final wording still
+    # pending RACCO I confirmation.
     CASE_TYPE_CHOICES = [
         ("Adoption", "Adoption"),
         ("Foster Care", "Foster Care"),
@@ -51,6 +54,29 @@ class Child(models.Model):
         ("Residential Care", "Residential Care"),
         ("Family Tracing & Reunification", "Family Tracing & Reunification"),
         ("Independent Living", "Independent Living"),
+    ]
+
+    # Official "Service Users by Case Category" list from NACC-SAMD-GF-000
+    # (June 2025), the government AACC-program certification tool.
+    CASE_CATEGORY_CHOICES = [
+        ("Abandoned", "Abandoned"),
+        ("Foundling", "Foundling"),
+        ("Surrendered", "Surrendered"),
+        ("Neglected", "Neglected"),
+        ("Dependent", "Dependent"),
+        ("Orphaned", "Orphaned"),
+        ("Victim of Physical Abuse", "Victim of Physical Abuse"),
+        ("Victim of Sexual Abuse", "Victim of Sexual Abuse"),
+        ("Victim of OSAEC/CSAEM", "Victim of OSAEC/CSAEM"),
+        ("Trafficked", "Trafficked"),
+        ("CICL", "CICL"),
+        ("Children at Risk (CAR)", "Children at Risk (CAR)"),
+        ("Children in Street Situation", "Children in Street Situation"),
+        ("Victim of Child Labor", "Victim of Child Labor"),
+        ("Child With Disability", "Child With Disability"),
+        ("Child Living with HIV", "Child Living with HIV"),
+        ("Indigenous Peoples", "Indigenous Peoples"),
+        ("Others", "Others"),
     ]
 
     # Who surrendered the child to NACC / RACCO I.
@@ -80,6 +106,8 @@ class Child(models.Model):
     barangay = models.CharField(max_length=100, blank=True)
     address = models.CharField(max_length=150, blank=True)
     case_type = models.CharField(max_length=150, blank=True, choices=CASE_TYPE_CHOICES)
+    # Official NACC-SAMD-GF-000 (June 2025) "Service Users by Case Category" list.
+    case_category = models.CharField(max_length=50, blank=True, choices=CASE_CATEGORY_CHOICES)
     surrendered_by = models.CharField(max_length=50, blank=True, choices=SURRENDERED_BY_CHOICES)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ACTIVE)
     case_status = models.CharField(
