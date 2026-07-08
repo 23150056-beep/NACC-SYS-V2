@@ -3,11 +3,13 @@ import string
 
 from rest_framework import generics, permissions, viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 
+from accounts.lockout import client_ip, clear_failures, is_locked, register_failure
 from accounts.models import Role
 from accounts.permissions import IsAdministrator, IsAdminOrStaff
 from children.models import Child
@@ -33,6 +35,39 @@ def _generate_temp_password(length=12):
 
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
+
+    def post(self, request, *args, **kwargs):
+        email = request.data.get("email", "") or ""
+        ip = client_ip(request)
+
+        # Locked means locked — don't even attempt authentication, correct
+        # credentials or not, and never reveal whether the account exists.
+        locked, retry_after = is_locked(email, ip)
+        if locked:
+            minutes = (retry_after + 59) // 60  # round up to whole minutes
+            return Response(
+                {"detail": f"Too many failed login attempts. Try again in {minutes} minute(s)."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        try:
+            response = super().post(request, *args, **kwargs)
+        except AuthenticationFailed:
+            self._register_failure(email, ip)
+            raise
+
+        clear_failures(email, ip)
+        return response
+
+    def _register_failure(self, email, ip):
+        _locked, _retry_after, new_lockout = register_failure(email, ip)
+        if new_lockout:
+            # No authenticated actor caused this — the system locked the
+            # account/IP out. log_activity accepts actor=None (logged as
+            # "System"), so there's no need to look up the user.
+            log_activity(
+                None, ActivityLog.UPDATED, ActivityLog.SECURITY,
+                entity_type="User",
+                entity_label=f"Login locked for {email} after repeated failures")
 
 
 class MeView(generics.RetrieveAPIView):

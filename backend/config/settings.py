@@ -141,6 +141,11 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
 }
 
+# Login brute-force protection (accounts.lockout) — cache-based, no DB models.
+LOGIN_MAX_ATTEMPTS = 5       # failed attempts for one email+IP before that combo locks
+LOGIN_IP_MAX_ATTEMPTS = 20   # failed attempts from one IP (any/many emails) before the IP locks
+LOGIN_LOCKOUT_MINUTES = 15   # both the rolling counting window and the lock duration
+
 CORS_ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
 ).split(",")

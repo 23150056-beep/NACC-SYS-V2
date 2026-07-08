@@ -32,8 +32,14 @@ export default function Login() {
       toast.success(`Welcome back, ${u?.first_name || u?.fullname || 'there'}`);
       navigate('/');
     } catch (err) {
-      setError('Invalid username or password.');
-      toast.error('Sign-in failed. Check your credentials.');
+      if (err.response?.status === 429) {
+        const message = err.response.data?.detail || 'Too many failed login attempts. Try again later.';
+        setError(message);
+        toast.error(message);
+      } else {
+        setError('Invalid username or password.');
+        toast.error('Sign-in failed. Check your credentials.');
+      }
     } finally {
       setBusy(false);
     }
