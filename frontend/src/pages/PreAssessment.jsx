@@ -12,6 +12,7 @@ export default function PreAssessment() {
   const toast = useToast();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
+  const [maxStep, setMaxStep] = useState(0);
   const [children, setChildren] = useState([]);
   const [child, setChild] = useState(null);
   const [pa, setPa] = useState(null); // the in-progress PreAssessment
@@ -31,14 +32,27 @@ export default function PreAssessment() {
     api.get('/instruments/').then((r) => setInstruments(r.data)).catch(() => {});
   }, []);
 
+  const goToStep = (i) => { if (i <= maxStep) setStep(i); };
+
+  const advanceTo = (i) => { setMaxStep((m) => Math.max(m, Math.floor(i))); setStep(i); };
+
+  const resumeStepFor = (data) => {
+    if (!data.consent) return 1;
+    if (!data.interview) return 2;
+    if ((data.instruments || []).length === 0) return 3;
+    return 4;
+  };
+
   const start = async (c) => {
     setError('');
     try {
       const { data } = await api.post('/pre-assessments/', { child: c.id });
       setChild(c); setPa(data);
+      setSelectedInstruments(data.instruments || []);
+      setNotes(data.notes || '');
       const existing = await api.get(`/consents/?child=${c.id}`);
       setConsents(existing.data);
-      setStep(1);
+      advanceTo(resumeStepFor(data));
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not start the pre-assessment.');
     }
@@ -52,14 +66,14 @@ export default function PreAssessment() {
 
   const linkConsent = async (consentId) => {
     setError('');
-    try { await patchPa({ consent: consentId }); setStep(2); }
+    try { await patchPa({ consent: consentId }); advanceTo(2); }
     catch (err) { setError(JSON.stringify(err.response?.data || 'Could not link consent.')); }
   };
 
   const saveInstruments = async () => {
     setError('');
     if (selectedInstruments.length === 0) { setError('Select at least one instrument title.'); return; }
-    try { await patchPa({ instruments: selectedInstruments }); setStep(4); }
+    try { await patchPa({ instruments: selectedInstruments }); advanceTo(4); }
     catch (err) { setError(JSON.stringify(err.response?.data || 'Could not save instruments.')); }
   };
 
@@ -70,7 +84,7 @@ export default function PreAssessment() {
       const { data } = await api.post(`/pre-assessments/${pa.id}/complete/`);
       setPa(data);
       toast.success('Pre-assessment completed');
-      setStep(5);
+      advanceTo(5);
     } catch (err) {
       setError(JSON.stringify(err.response?.data || 'Could not complete.'));
     }
@@ -78,14 +92,18 @@ export default function PreAssessment() {
 
   return (
     <div style={{ ...PAGE, maxWidth: 860 }}>
-      {/* Step rail */}
+      {/* Step rail — click any visited step to look back at it */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
-        {STEPS.map((s, i) => (
-          <div key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 13px', borderRadius: 'var(--radius-pill)', fontSize: 12.5, fontWeight: 700, background: i === step ? 'var(--blue-600)' : i < step ? 'var(--success-50)' : 'var(--ink-50)', color: i === step ? '#fff' : i < step ? 'var(--success-600)' : 'var(--text-muted)', border: `1px solid ${i === step ? 'var(--blue-600)' : i < step ? 'var(--success-100)' : 'var(--border)'}` }}>
-            {i < step ? <Icon name="check" size={13} /> : <span className="racco-mono" style={{ fontSize: 11 }}>{i + 1}</span>}
-            {s}
-          </div>
-        ))}
+        {STEPS.map((s, i) => {
+          const reachable = i <= maxStep && i < 5;
+          return (
+            <div key={s} onClick={() => reachable && goToStep(i)} title={reachable ? `Go to ${s}` : undefined}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 13px', borderRadius: 'var(--radius-pill)', fontSize: 12.5, fontWeight: 700, cursor: reachable ? 'pointer' : 'default', background: i === step ? 'var(--blue-600)' : i < step ? 'var(--success-50)' : 'var(--ink-50)', color: i === step ? '#fff' : i < step ? 'var(--success-600)' : 'var(--text-muted)', border: `1px solid ${i === step ? 'var(--blue-600)' : i < step ? 'var(--success-100)' : 'var(--border)'}` }}>
+              {i < step ? <Icon name="check" size={13} /> : <span className="racco-mono" style={{ fontSize: 11 }}>{i + 1}</span>}
+              {s}
+            </div>
+          );
+        })}
       </div>
 
       {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />} style={{ marginBottom: 14 }}>{error}</Alert>}
@@ -128,7 +146,7 @@ export default function PreAssessment() {
           onDone={async (interviewId) => {
             try {
               if (interviewId) await patchPa({ interview: interviewId });
-              setStep(3);
+              advanceTo(3);
             } catch (err) { setError(JSON.stringify(err.response?.data || 'Could not link interview.')); }
           }} />
       )}
@@ -165,7 +183,7 @@ export default function PreAssessment() {
       )}
 
       {step === 4 && (
-        <ProblemsStep child={child} problems={problems} setProblems={setProblems} setError={setError} onNext={() => setStep(4.5)} />
+        <ProblemsStep child={child} problems={problems} setProblems={setProblems} setError={setError} onNext={() => advanceTo(4.5)} />
       )}
       {step === 4.5 && (
         <Card eyebrow="Step 6" title="Review & complete" padding="22px">
@@ -199,7 +217,7 @@ export default function PreAssessment() {
               {child?.fullname}&apos;s profile now shows “Answered” with the instrument titles used.
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
-              <Button variant="secondary" onClick={() => { setStep(0); setPa(null); setChild(null); setSelectedInstruments([]); setProblems([]); setNotes(''); api.get('/children/').then((r) => setChildren(r.data.filter((c) => c.status === 'active'))); }}>Start another</Button>
+              <Button variant="secondary" onClick={() => { setStep(0); setMaxStep(0); setPa(null); setChild(null); setSelectedInstruments([]); setProblems([]); setNotes(''); api.get('/children/').then((r) => setChildren(r.data.filter((c) => c.status === 'active'))); }}>Start another</Button>
               <Button variant="primary" onClick={() => navigate(`/report/child/${child.id}`)}>Open child report</Button>
             </div>
           </div>

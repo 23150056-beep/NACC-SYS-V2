@@ -102,6 +102,32 @@ class PreAssessmentFlowTest(APITestCase):
         self.assertEqual(after["pre_assessment_status"], "Answered")
         self.assertEqual(after["instruments_used"], ["CBCL"])
 
+    def test_starting_again_resumes_in_progress_instead_of_duplicating(self):
+        self._auth("p@racco1.gov.ph")
+        first = self._start()
+        self.assertEqual(first.status_code, 201)
+        pid = first.data["id"]
+        self.client.patch(f"/api/pre-assessments/{pid}/", {"notes": "so far so good"}, format="json")
+
+        second = self._start()
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["id"], pid)
+        self.assertEqual(second.data["notes"], "so far so good")
+        self.assertEqual(PreAssessment.objects.filter(child=self.child).count(), 1)
+
+    def test_starting_after_completion_creates_a_new_one(self):
+        self._auth("p@racco1.gov.ph")
+        pid = self._start().data["id"]
+        consent = ConsentRecord.objects.create(child=self.child, status="signed", signer_name="M")
+        self.client.patch(f"/api/pre-assessments/{pid}/", {
+            "consent": consent.id, "instruments": [self.tool.id]}, format="json")
+        self.client.post(f"/api/pre-assessments/{pid}/complete/")
+
+        again = self._start()
+        self.assertEqual(again.status_code, 201)
+        self.assertNotEqual(again.data["id"], pid)
+        self.assertEqual(PreAssessment.objects.filter(child=self.child).count(), 2)
+
     def test_staff_can_read_pre_assessments(self):
         PreAssessment.objects.create(child=self.child, psychologist=self.psy, status="completed")
         self._auth("s@racco1.gov.ph")

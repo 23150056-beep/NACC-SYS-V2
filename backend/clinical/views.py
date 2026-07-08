@@ -170,6 +170,22 @@ class PreAssessmentViewSet(_ChildScopedClinicalViewSet):
     def get_queryset(self):
         return super().get_queryset().prefetch_related("instruments").select_related("consent", "interview")
 
+    def create(self, request, *args, **kwargs):
+        """Resume the psychologist's own in-progress pre-assessment for this
+        child instead of starting a duplicate — the wizard calls this every
+        time it's (re)opened for a child, including after navigating away."""
+        child_id = request.data.get("child")
+        if child_id and str(child_id).isdigit():
+            # Through get_queryset() so assignment scoping still applies if the
+            # child has since been reassigned away from this psychologist.
+            existing = self.get_queryset().filter(
+                child_id=child_id, psychologist=request.user,
+                status=PreAssessment.IN_PROGRESS,
+            ).first()
+            if existing:
+                return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         self._assert_can_write(serializer.validated_data["child"])
         obj = serializer.save(psychologist=self.request.user, status=PreAssessment.IN_PROGRESS)
