@@ -20,6 +20,7 @@ import Instruments from './pages/Instruments';
 import PreAssessment from './pages/PreAssessment';
 import Schedule from './pages/Schedule';
 import Survey from './pages/Survey';
+import SamdReadiness from './pages/SamdReadiness';
 
 function Shell({ children }) {
   return (
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/monitoring" element={<ProtectedRoute roles={['Administrator', 'Staff', 'Psychologist']}><Shell><Monitoring /></Shell></ProtectedRoute>} />
           <Route path="/reports/summary" element={<ProtectedRoute roles={['Administrator', 'Staff']}><Shell><AgencySummary /></Shell></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute roles={['Administrator']}><Shell><Users /></Shell></ProtectedRoute>} />
+          <Route path="/samd" element={<ProtectedRoute roles={['Administrator']}><Shell><SamdReadiness /></Shell></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute roles={['Administrator']}><Shell><Settings /></Shell></ProtectedRoute>} />
           </Routes>
         </BrowserRouter>

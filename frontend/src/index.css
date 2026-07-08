@@ -397,3 +397,15 @@ tr:focus-visible {
     background: #fff !important;
   }
 }
+
+/* Opposite of .racco-no-print: content meant ONLY for the printed page (e.g. a
+   condensed summary standing in for a large interactive screen). Hidden on
+   screen, shown on print. Used by the SAMD readiness "Print summary" view. */
+.racco-print-only {
+  display: none;
+}
+@media print {
+  .racco-print-only {
+    display: block !important;
+  }
+}

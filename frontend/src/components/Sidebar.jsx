@@ -20,6 +20,7 @@ const NAV = [
   { section: 'Governance' },
   { to: '/reports/summary', label: 'Agency Summary', icon: 'bar-chart-3', roles: ['Administrator', 'Staff'] },
   { to: '/users', label: 'User Management', icon: 'user-cog', roles: ['Administrator'] },
+  { to: '/samd', label: 'SAMD Readiness', icon: 'shield-check', roles: ['Administrator'] },
   { to: '/settings', label: 'Settings', icon: 'settings', roles: ['Administrator'] },
 ];
 
