@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from accounts.models import Role
 from activity.models import ActivityLog
 from activity.services import log_activity
@@ -23,8 +25,9 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id", "email", "username", "first_name", "last_name",
             "middle_initial", "contact_details", "role", "role_name",
-            "fullname", "status",
+            "fullname", "status", "must_change_password",
         ]
+        read_only_fields = ["must_change_password"]
 
 
 class UserWriteSerializer(serializers.ModelSerializer):
@@ -62,6 +65,38 @@ class UserWriteSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Voluntary or forced (must_change_password) self-service password change.
+    The requesting user always comes from the view via context — never from
+    the request body — so this can't be used to change someone else's password."""
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate_current_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        if attrs["new_password"] == attrs["current_password"]:
+            raise serializers.ValidationError(
+                {"new_password": "New password must be different from the current password."})
+        try:
+            validate_password(attrs["new_password"], user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"new_password": exc.messages})
+        return attrs
+
+    def save(self):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.must_change_password = False
+        user.save(update_fields=["password", "must_change_password", "updated_at"])
+        return user
 
 
 class LoginSerializer(TokenObtainPairSerializer):

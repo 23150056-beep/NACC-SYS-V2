@@ -32,6 +32,10 @@ class User(AbstractUser):
         Role, on_delete=models.PROTECT, null=True, blank=True, related_name="users"
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ACTIVE)
+    # Set whenever an admin issues a temporary password. Server-side
+    # enforcement (see accounts/authentication.py) blocks all other API
+    # access until the user sets their own password.
+    must_change_password = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

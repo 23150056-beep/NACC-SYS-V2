@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Avatar, Icon, ROLE_META, hoverLift, hoverTint } from '../ui';
+import { useToast } from '../context/ToastContext';
+import api from '../api/client';
+import { Avatar, Icon, ROLE_META, hoverLift, hoverTint, Button, FormField, Input, Alert } from '../ui';
 import { useActivity } from '../context/ActivityContext';
 
 const SCREEN_TITLES = {
@@ -44,10 +46,13 @@ export function timeAgo(iso) {
   return `${d} day${d > 1 ? 's' : ''} ago`;
 }
 
+const EMPTY_PW = { current_password: '', new_password: '', confirm: '' };
+
 export default function Topbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const toast = useToast();
   const role = user?.role_name || 'Staff';
   const name = user?.fullname || user?.username || 'User';
   const [title, sub] = SCREEN_TITLES[location.pathname] || ['', ''];
@@ -65,6 +70,36 @@ export default function Topbar() {
     : NOTIF_TABS.filter((t) => t.key === 'all');
 
   const handleLogout = () => { logout(); navigate('/login'); };
+
+  // Self-service password change — available to every role, not just admins.
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw, setPw] = useState(EMPTY_PW);
+  const [pwError, setPwError] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
+
+  const openPw = () => { setPw(EMPTY_PW); setPwError(''); setPwOpen(true); };
+
+  const submitPw = async (e) => {
+    e.preventDefault();
+    setPwError('');
+    if (pw.new_password.length < 8) { setPwError('New password must be at least 8 characters.'); return; }
+    if (pw.new_password !== pw.confirm) { setPwError('Passwords do not match.'); return; }
+    setPwBusy(true);
+    try {
+      await api.post('/auth/change-password/', {
+        current_password: pw.current_password, new_password: pw.new_password,
+      });
+      toast.success('Password changed.');
+      setPwOpen(false);
+    } catch (err) {
+      const data = err.response?.data || {};
+      const msg = data.current_password || data.new_password || data.non_field_errors || data.detail
+        || 'Could not change the password.';
+      setPwError(Array.isArray(msg) ? msg[0] : msg);
+    } finally {
+      setPwBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!notifOpen) return;
@@ -141,6 +176,14 @@ export default function Topbar() {
         </div>
 
         <button
+          onClick={openPw} title="Change password" aria-label="Change password"
+          {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })}
+          style={{ background: 'var(--ink-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', width: 40, height: 40, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-body)', transition: 'var(--transition-base)' }}
+        >
+          <Icon name="key-round" size={17} />
+        </button>
+
+        <button
           onClick={handleLogout} title="Log out" aria-label="Log out"
           {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 40, padding: '0 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--ink-50)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, color: 'var(--text-body)', transition: 'var(--transition-base)' }}
@@ -150,6 +193,30 @@ export default function Topbar() {
           <Icon name="log-out" size={16} /> Log Out
         </button>
       </div>
+
+      {pwOpen && (
+        <div onClick={() => setPwOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 90, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
+          <form onSubmit={submitPw} onClick={(e) => e.stopPropagation()} style={{ width: 420, maxWidth: '92%', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Change Password</div>
+              <button type="button" onClick={() => setPwOpen(false)} aria-label="Close" style={{ width: 30, height: 30, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="x" size={16} /></button>
+            </div>
+            {pwError && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{pwError}</Alert>}
+            <FormField label="Current Password">
+              <Input type="password" value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} placeholder="••••••••" leading={<Icon name="lock" size={16} />} required autoFocus />
+            </FormField>
+            <FormField label="New Password">
+              <Input type="password" value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} placeholder="••••••••" leading={<Icon name="lock-keyhole" size={16} />} required />
+            </FormField>
+            <FormField label="Confirm New Password">
+              <Input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} placeholder="••••••••" leading={<Icon name="lock-keyhole" size={16} />} required />
+            </FormField>
+            <Button type="submit" variant="primary" fullWidth disabled={pwBusy} iconLeft={<Icon name="check" size={16} />}>
+              {pwBusy ? 'Updating…' : 'Update Password'}
+            </Button>
+          </form>
+        </div>
+      )}
     </header>
   );
 }

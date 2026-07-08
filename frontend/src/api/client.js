@@ -17,6 +17,14 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config;
     const refresh = localStorage.getItem('refresh');
+    // A 401 raised because the account has a forced password change pending
+    // (see accounts/authentication.py) is not an expired/invalid session —
+    // refreshing the access token won't help, since the new token is blocked
+    // the same way. Reject as-is so the change-password gate can show its own
+    // error instead of triggering the logout/redirect below.
+    const isPasswordChangeRequired = error.response?.status === 401
+      && String(error.response?.data?.detail || '').includes('must change your password');
+    if (isPasswordChangeRequired) return Promise.reject(error);
     if (error.response?.status === 401 && refresh && !original._retry) {
       original._retry = true;
       try {

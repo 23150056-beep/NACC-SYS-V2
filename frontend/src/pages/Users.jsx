@@ -11,6 +11,10 @@ export default function Users() {
   const [roles, setRoles] = useState([]);
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
+  // Holds { user, temp_password } while the just-generated temp password is
+  // on screen. Closing the modal discards it for good — the API never
+  // returns it again, so there is nothing to keep in state afterward.
+  const [resetResult, setResetResult] = useState(null);
   const { refresh: refreshActivity } = useActivity();
   const toast = useToast();
 
@@ -54,6 +58,23 @@ export default function Users() {
     }
   };
 
+  const resetPassword = async (u) => {
+    if (!window.confirm(`Issue a new temporary password for ${u.fullname || u.email}? Their current password will stop working immediately.`)) return;
+    try {
+      const { data } = await api.post(`/users/${u.id}/reset-password/`);
+      setResetResult({ user: u, temp_password: data.temp_password });
+      refreshActivity();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not reset the password.');
+    }
+  };
+
+  const copyTempPassword = () => {
+    if (!resetResult) return;
+    navigator.clipboard.writeText(resetResult.temp_password);
+    toast.success('Temporary password copied to clipboard.');
+  };
+
   const toneFor = (role) => (role === 'Administrator' ? 'brand' : role === 'Psychologist' ? 'red' : 'amber');
 
   return (
@@ -90,6 +111,9 @@ export default function Users() {
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button title="Edit user" aria-label={`Edit ${u.fullname || u.email}`} onClick={() => openEdit(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
+                        {/* Archived users never appear in this list (see load()), but guard
+                            anyway in case a future view surfaces them here too. */}
+                        <button title="Reset password" aria-label={`Reset password for ${u.fullname || u.email}`} disabled={u.status === 'archived'} onClick={() => resetPassword(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={{ ...iconBtn('var(--amber-500)'), ...(u.status === 'archived' ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}><Icon name="key-round" size={15} /></button>
                         <button title="Deactivate user" aria-label={`Deactivate ${u.fullname || u.email}`} onClick={() => archive(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="user-x" size={15} /></button>
                       </div>
                     </td>
@@ -139,6 +163,29 @@ export default function Users() {
               <Button type="submit" variant="primary" fullWidth iconLeft={<Icon name="save" size={16} />}>Save User</Button>
             </div>
           </form>
+        </div>
+      )}
+
+      {resetResult && (
+        <div onClick={() => setResetResult(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 80, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '92%', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Temporary Password</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{resetResult.user.fullname || resetResult.user.email}</div>
+              </div>
+              <button type="button" onClick={() => setResetResult(null)} aria-label="Close" {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="x" size={17} /></button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', background: 'var(--ink-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+              <span className="racco-mono" style={{ flex: 1, fontSize: 17, fontWeight: 700, color: 'var(--text-strong)', letterSpacing: '0.04em' }}>{resetResult.temp_password}</span>
+              <button type="button" title="Copy" aria-label="Copy temporary password" onClick={copyTempPassword} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="copy" size={15} /></button>
+            </div>
+            <Alert tone="warning" icon={<Icon name="alert-triangle" size={18} />}>
+              Give this to the user — they'll be required to set a new password at next login.
+              This password will not be shown again; generate a new one if it's lost.
+            </Alert>
+            <Button type="button" variant="secondary" fullWidth onClick={() => setResetResult(null)}>Done</Button>
+          </div>
         </div>
       )}
     </div>

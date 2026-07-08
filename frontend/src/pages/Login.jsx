@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Button, FormField, Input, Alert, Icon } from '../ui';
+import PasswordChangeGate from '../components/PasswordChangeGate';
 
 export default function Login() {
   const { login } = useAuth();
@@ -12,10 +13,9 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  // 'login' = sign-in form, 'forgot' = request reset, 'reset' = set new password
+  // 'login' = sign-in form, 'help' = "resets are admin-issued" info panel,
+  // 'forced' = the just-logged-in account has a temporary password to replace
   const [view, setView] = useState('login');
-  const [newPass, setNewPass] = useState('');
-  const [confirmPass, setConfirmPass] = useState('');
 
   const submit = async (e) => {
     e.preventDefault();
@@ -23,6 +23,12 @@ export default function Login() {
     setBusy(true);
     try {
       const u = await login(email, password);
+      if (u?.must_change_password) {
+        // Do not enter the app yet — the account was issued a temporary
+        // password and must set its own before anything else works.
+        setView('forced');
+        return;
+      }
       toast.success(`Welcome back, ${u?.first_name || u?.fullname || 'there'}`);
       navigate('/');
     } catch (err) {
@@ -33,26 +39,16 @@ export default function Login() {
     }
   };
 
-  // Forgot Password: in production this triggers a NACC-issued reset email/SMS.
-  const requestReset = (e) => {
-    e.preventDefault();
-    setError('');
-    if (!email) { setError('Enter your username (email) first.'); return; }
-    toast.success('A reset link has been sent to your registered email. Set a new password below.');
-    setView('reset');
-  };
-
-  // Reset Password: after resetting, the user logs in with the NEW password.
-  const submitReset = (e) => {
-    e.preventDefault();
-    setError('');
-    if (newPass.length < 6) { setError('New password must be at least 6 characters.'); return; }
-    if (newPass !== confirmPass) { setError('Passwords do not match.'); return; }
-    toast.success('Password reset. Please log in with your new password.');
-    setPassword('');
-    setNewPass(''); setConfirmPass('');
-    setView('login');
-  };
+  if (view === 'forced') {
+    return (
+      <PasswordChangeGate
+        prefillCurrent={password}
+        title="Set a new password"
+        subtitle="This account has a temporary password issued by an administrator. Choose a new password to continue."
+        onDone={() => { toast.success('Password updated. Welcome!'); navigate('/'); }}
+      />
+    );
+  }
 
   return (
     <div className="racco-sky-wash" style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
@@ -80,12 +76,10 @@ export default function Login() {
         {/* Form panel */}
         <div style={{ padding: '40px 38px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, color: 'var(--text-strong)' }}>
-            {view === 'login' ? 'Log in to your account' : view === 'forgot' ? 'Forgot your password?' : 'Set a new password'}
+            {view === 'login' ? 'Log in to your account' : 'Need a password reset?'}
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            {view === 'login' ? 'Enter your agency credentials to continue.'
-              : view === 'forgot' ? 'Enter your username and we will send a reset link.'
-              : 'Choose a new password, then log in with it.'}
+            {view === 'login' ? 'Enter your agency credentials to continue.' : 'Password resets are handled by your administrator.'}
           </p>
 
           {view === 'login' && (
@@ -98,7 +92,7 @@ export default function Login() {
                 <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" leading={<Icon name="lock" size={16} />} required />
               </FormField>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -6 }}>
-                <button type="button" onClick={() => { setError(''); setView('forgot'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, color: 'var(--blue-600)' }}>Forgot password?</button>
+                <button type="button" onClick={() => { setError(''); setView('help'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, color: 'var(--blue-600)' }}>Forgot password?</button>
               </div>
               <Button type="submit" variant="primary" size="lg" fullWidth disabled={busy} iconRight={busy ? null : <Icon name="arrow-right" size={18} />}>
                 {busy ? 'Logging in…' : 'Log In'}
@@ -106,29 +100,15 @@ export default function Login() {
             </form>
           )}
 
-          {view === 'forgot' && (
-            <form onSubmit={requestReset} style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{error}</Alert>}
-              <FormField label="Username">
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@racco1.gov.ph" leading={<Icon name="user" size={16} />} required autoFocus />
-              </FormField>
-              <Button type="submit" variant="primary" size="lg" fullWidth iconRight={<Icon name="mail" size={18} />}>Send Reset Link</Button>
-              <button type="button" onClick={() => { setError(''); setView('login'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, color: 'var(--text-muted)' }}>← Back to log in</button>
-            </form>
-          )}
-
-          {view === 'reset' && (
-            <form onSubmit={submitReset} style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{error}</Alert>}
-              <FormField label="New Password">
-                <Input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="••••••••" leading={<Icon name="lock" size={16} />} required autoFocus />
-              </FormField>
-              <FormField label="Confirm New Password">
-                <Input type="password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} placeholder="••••••••" leading={<Icon name="lock-keyhole" size={16} />} required />
-              </FormField>
-              <Button type="submit" variant="primary" size="lg" fullWidth iconRight={<Icon name="check" size={18} />}>Reset Password</Button>
-              <button type="button" onClick={() => { setError(''); setView('login'); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, color: 'var(--text-muted)' }}>← Back to log in</button>
-            </form>
+          {view === 'help' && (
+            <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Alert tone="info" icon={<Icon name="info" size={18} />}>
+                There is no self-service reset. Ask your administrator for a temporary
+                password, log in with it, and you will be asked to set a new password
+                of your own before continuing.
+              </Alert>
+              <Button type="button" variant="secondary" size="lg" fullWidth onClick={() => setView('login')}>← Back to log in</Button>
+            </div>
           )}
 
         </div>
