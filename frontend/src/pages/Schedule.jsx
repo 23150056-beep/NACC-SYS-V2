@@ -32,6 +32,8 @@ export default function Schedule() {
   const [blockForm, setBlockForm] = useState(null);
   const [sel, setSel] = useState(null);
   const [error, setError] = useState('');
+  const [brief, setBrief] = useState(null);      // { draft, generated_at, job_id, childName }
+  const [briefBusy, setBriefBusy] = useState(false);
 
   const load = () => {
     api.get('/appointments/').then((r) => setAppointments(r.data)).catch(() => {});
@@ -40,6 +42,7 @@ export default function Schedule() {
     if (!isPsych) api.get('/psychologists/').then((r) => setPsychologists(r.data)).catch(() => {});
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { api.post('/ai/prefetch-briefs/').catch(() => {}); }, []);
 
   const events = useMemo(() => appointments.map((a) => {
     const start = new Date(a.start);
@@ -138,6 +141,24 @@ export default function Schedule() {
       toast.success(`Appointment ${actionName === 'no_show' ? 'marked no-show' : actionName + 'd'}`);
       setSel(null); load();
     } catch (err) { toast.error(err.response?.data?.detail || 'Could not update.'); }
+  };
+
+  const showBrief = async (a) => {
+    setBriefBusy(true);
+    try {
+      let d;
+      try {
+        ({ data: d } = await api.get(`/ai/brief/child/${a.child}/latest/`));
+      } catch {
+        ({ data: d } = await api.post(`/ai/brief/child/${a.child}/`));
+        d.generated_at = new Date().toISOString();
+      }
+      setBrief({ ...d, childName: a.child_name });
+    } catch (err) {
+      toast.error(err.response?.status === 503
+        ? 'AI assistance is switched off or unreachable.'
+        : 'Could not load the brief.');
+    } finally { setBriefBusy(false); }
   };
 
   return (
@@ -324,6 +345,14 @@ export default function Schedule() {
               {PURPOSES.find((p) => p.v === sel.purpose)?.label || sel.purpose} with {sel.psychologist_name || '—'}
               {sel.notes ? ` · ${sel.notes}` : ''}
             </div>
+            {sel.status === 'scheduled' && new Date(sel.start).toDateString() === new Date().toDateString() && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button variant="secondary" onClick={() => showBrief(sel)} disabled={briefBusy}
+                        iconLeft={<Icon name={briefBusy ? 'loader' : 'sparkles'} size={16} />}>
+                  {briefBusy ? 'Working…' : 'Pre-session brief'}
+                </Button>
+              </div>
+            )}
             {sel.status === 'scheduled' && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {(isPsych || role === 'Administrator') && <Button variant="primary" onClick={() => setStatus(sel, 'complete')} iconLeft={<Icon name="check" size={15} />}>Completed</Button>}
@@ -331,6 +360,26 @@ export default function Schedule() {
                 <Button variant="danger" onClick={() => setStatus(sel, 'cancel')} iconLeft={<Icon name="x" size={15} />}>Cancel</Button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Pre-session brief modal (read-only) */}
+      {brief && (
+        <div onClick={() => setBrief(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 90 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 420, maxWidth: '92%', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Icon name="sparkles" size={18} style={{ color: 'var(--blue-600)' }} />
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-strong)' }}>Pre-session brief — {brief.childName}</span>
+            </div>
+            {brief.generated_at && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Drafted {new Date(brief.generated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>}
+            <p style={{ fontSize: 13.5, color: 'var(--text-body)', lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap' }}>{brief.draft}</p>
+            <Alert disclaimer title="Draft only.">AI-drafted decision support, not a diagnosis. The licensed psychologist reviews, edits, and approves all content.</Alert>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Button variant="ghost" onClick={() => { api.post(`/ai/jobs/${brief.job_id}/feedback/`, { outcome: 'accepted' }).catch(() => {}); setBrief(null); }} iconLeft={<Icon name="thumbs-up" size={15} />}>Useful</Button>
+              <Button variant="ghost" onClick={() => { api.post(`/ai/jobs/${brief.job_id}/feedback/`, { outcome: 'discarded' }).catch(() => {}); setBrief(null); }} iconLeft={<Icon name="thumbs-down" size={15} />}>Not useful</Button>
+              <Button variant="secondary" onClick={() => setBrief(null)}>Close</Button>
+            </div>
           </div>
         </div>
       )}
