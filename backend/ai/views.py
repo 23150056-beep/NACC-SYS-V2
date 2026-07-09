@@ -11,7 +11,7 @@ from ai.briefs import build_brief_prompt, latest_brief_job, prefetch_briefs
 from ai.models import AISetting, AIJob
 from ai.services import AIUnavailable, DISCLAIMER, feature_enabled, run_job
 from children.models import Child
-from clinical.models import PsychologicalReport
+from clinical.models import PsychologicalReport, CaseStudy
 from scheduling.models import Appointment
 
 
@@ -203,3 +203,61 @@ class PrefetchBriefsView(APIView):
         children = list({a.child_id: a.child for a in appts}.values())
         queued, skipped = prefetch_briefs(children, request.user)
         return Response({"queued": queued, "skipped": skipped})
+
+
+class CaseStudySummaryDraftView(APIView):
+    """F3 — draft structured fields from the social worker's case study."""
+    permission_classes = [CanViewResults]
+
+    def post(self, request, case_study_id):
+        if not feature_enabled("doc_intelligence"):
+            return _gate("doc_intelligence")
+        try:
+            cs = CaseStudy.objects.select_related("child").get(pk=case_study_id)
+        except CaseStudy.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if _role(request) == Role.PSYCHOLOGIST and \
+                cs.child.assigned_psychologist_id != request.user.id:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not cs.extracted_text:
+            return Response(
+                {"detail": "No extractable text in this case study (scanned or Word file)."},
+                status=status.HTTP_400_BAD_REQUEST)
+        prompt = prompts.CASE_STUDY.format(text=cs.extracted_text[:12000])
+        try:
+            text, job = run_job("case_study", f"casestudy:{cs.id}", prompt,
+                                prompts.SYSTEM, request.user)
+        except AIUnavailable:
+            return _gate("doc_intelligence")
+        cs.ai_summary = text
+        cs.ai_summary_confirmed = False
+        cs.save(update_fields=["ai_summary", "ai_summary_confirmed"])
+        return Response({"draft": text, "job_id": job.id, "disclaimer": DISCLAIMER})
+
+
+class ConfirmCaseStudySummaryView(APIView):
+    """Human-in-the-loop confirm/edit of the case-study draft."""
+    permission_classes = [CanViewResults]
+
+    def post(self, request, case_study_id):
+        try:
+            cs = CaseStudy.objects.select_related("child").get(pk=case_study_id)
+        except CaseStudy.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        role = _role(request)
+        can = role == Role.ADMINISTRATOR or (
+            role == Role.PSYCHOLOGIST and cs.child.assigned_psychologist_id == request.user.id)
+        if not can:
+            return Response(
+                {"detail": "Only the assigned psychologist can confirm the summary."},
+                status=status.HTTP_403_FORBIDDEN)
+        text = (request.data.get("text") or "").strip()
+        if not text:
+            return Response({"text": "Provide the confirmed summary text."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        cs.ai_summary = text
+        cs.ai_summary_confirmed = True
+        cs.save(update_fields=["ai_summary", "ai_summary_confirmed"])
+        AIJob.objects.filter(input_ref=f"casestudy:{cs.id}",
+                             job_type="case_study").update(accepted=True)
+        return Response({"ai_summary": cs.ai_summary, "confirmed": True})

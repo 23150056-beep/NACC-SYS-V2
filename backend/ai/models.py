@@ -35,6 +35,7 @@ class AIJob(models.Model):
         ("doc_intelligence", "Report Document Intelligence"),
         ("remark_polish", "Remark Polishing"),
         ("census_narrative", "Census Narrative"),
+        ("case_study", "Case Study Summary"),
     ]
 
     job_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
