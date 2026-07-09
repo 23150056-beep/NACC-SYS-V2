@@ -15,6 +15,7 @@ const CASE_STATUS_META = {
 const caseRef = (id) => `C-${String(id).padStart(4, '0')}`;
 const td = { padding: '10px 14px', fontSize: 13, color: 'var(--text-body)', whiteSpace: 'nowrap' };
 const textarea = { width: '100%', resize: 'vertical', padding: '11px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 14, lineHeight: 1.55 };
+const DISCLAIMER_TEXT = 'AI-drafted decision support, not a diagnosis. The licensed psychologist reviews, edits, and approves all content.';
 
 export default function ChildProgressReport() {
   const { id } = useParams();
@@ -29,12 +30,18 @@ export default function ChildProgressReport() {
   const [instruments, setInstruments] = useState([]);
   const [aiModal, setAiModal] = useState(null); // { title, draft, disclaimer, onConfirm? }
   const [aiBusy, setAiBusy] = useState(false);
+  const [latestBrief, setLatestBrief] = useState(null); // { draft, job_id, generated_at }
+  const [polishJob, setPolishJob] = useState(null);     // { id, draft } — last polish result
   const [qr, setQr] = useState(null); // { token, url }
   const [surveyTemplates, setSurveyTemplates] = useState([]);
   const isStaffOrAdmin = ['Administrator', 'Staff'].includes(user?.role_name);
 
   const load = () => api.get(`/reports/child/${id}/`).then((r) => setData(r.data)).catch(() => setData('error'));
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => {
+    load();
+    api.get(`/ai/brief/child/${id}/latest/`).then((r) => setLatestBrief(r.data)).catch(() => {});
+    /* eslint-disable-next-line */
+  }, [id]);
   useEffect(() => { if (isPsych) api.get('/instruments/').then((r) => setInstruments(r.data)).catch(() => {}); }, [isPsych]);
   useEffect(() => {
     api.get('/form-templates/?type=self_report_gov').then((r) => setSurveyTemplates(r.data)).catch(() => {});
@@ -69,8 +76,13 @@ export default function ChildProgressReport() {
 
   const addRemark = async () => {
     if (!remarkText.trim()) return;
+    const saved = remarkText.trim();
     try {
-      await api.post('/remarks/', { child: Number(id), text: remarkText.trim() });
+      await api.post('/remarks/', { child: Number(id), text: saved });
+      if (polishJob) {
+        sendAiFeedback(polishJob.id, saved === polishJob.draft.trim() ? 'accepted' : 'edited');
+        setPolishJob(null);
+      }
       setRemarkText(''); load(); toast.success('Remark added');
     } catch (err) { toast.error(err.response?.data?.detail || 'Could not add the remark.'); }
   };
@@ -109,12 +121,32 @@ export default function ChildProgressReport() {
       : (err.response?.data?.detail || 'AI request failed.'));
   };
 
-  const aiBrief = async () => {
+  const sendAiFeedback = (jobId, outcome) => {
+    if (!jobId) return;
+    api.post(`/ai/jobs/${jobId}/feedback/`, { outcome }).catch(() => {});
+  };
+
+  const openBrief = (data, regenerated) => {
+    setAiModal({
+      title: 'AI pre-session brief (draft)', draft: data.draft, disclaimer: data.disclaimer,
+      jobId: data.job_id, feedback: true,
+      generatedAt: regenerated ? null : data.generated_at,
+      onRegenerate: regenerateBrief,
+    });
+  };
+
+  const regenerateBrief = async () => {
     setAiBusy(true);
     try {
       const { data: d } = await api.post(`/ai/brief/child/${id}/`);
-      setAiModal({ title: 'AI pre-session brief (draft)', draft: d.draft, disclaimer: d.disclaimer });
+      setLatestBrief({ draft: d.draft, job_id: d.job_id, generated_at: new Date().toISOString() });
+      openBrief(d, true);
     } catch (err) { aiUnavailable(err); } finally { setAiBusy(false); }
+  };
+
+  const aiBrief = () => {
+    if (latestBrief) openBrief({ ...latestBrief, disclaimer: DISCLAIMER_TEXT });
+    else regenerateBrief();
   };
 
   const aiPolish = async () => {
@@ -123,6 +155,7 @@ export default function ChildProgressReport() {
     try {
       const { data: d } = await api.post('/ai/polish-remark/', { text: remarkText.trim() });
       setRemarkText(d.draft);
+      setPolishJob({ id: d.job_id, draft: d.draft });
       toast.success('Draft polished — review before saving');
     } catch (err) { aiUnavailable(err); } finally { setAiBusy(false); }
   };
@@ -143,6 +176,23 @@ export default function ChildProgressReport() {
         },
       });
     } catch (err) { aiUnavailable(err); } finally { setAiBusy(false); }
+  };
+
+  const aiSummarizeCaseStudy = (f) => {
+    setAiBusy(true);
+    api.post(`/ai/summarize-case-study/${f.id}/`)
+      .then(({ data: d }) => setAiModal({
+        title: `AI summary draft — ${f.original_filename}`,
+        draft: d.draft, disclaimer: d.disclaimer, editable: true,
+        onConfirm: async (text) => {
+          try {
+            await api.post(`/ai/confirm-case-study-summary/${f.id}/`, { text });
+            toast.success('Summary confirmed');
+            setAiModal(null); load();
+          } catch (err) { aiUnavailable(err); }
+        },
+      }))
+      .catch(aiUnavailable).finally(() => setAiBusy(false));
   };
 
   return (
@@ -269,7 +319,22 @@ export default function ChildProgressReport() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.original_filename}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{f.description || 'Case study'} · {f.uploaded_by_name || '—'} · {(f.created_at || '').slice(0, 10)}</div>
+                  {f.ai_summary && (
+                    <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-100)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <Icon name="sparkles" size={12} style={{ color: 'var(--blue-600)' }} />
+                        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--blue-700)' }}>
+                          AI summary {f.ai_summary_confirmed ? '· confirmed' : '· draft (unconfirmed)'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{f.ai_summary}</p>
+                    </div>
+                  )}
                 </div>
+                {canWrite && f.has_text && (
+                  <Button variant="ghost" onClick={() => aiSummarizeCaseStudy(f)} disabled={aiBusy}
+                          iconLeft={<Icon name="sparkles" size={15} />} className="racco-no-print">AI summary</Button>
+                )}
                 <Button variant="ghost" onClick={async () => {
                   try {
                     const res = await api.get(`/case-studies/${f.id}/download/`, { responseType: 'blob' });
@@ -395,7 +460,7 @@ export default function ChildProgressReport() {
       <Card eyebrow="Progress log" title="Psychological remark notes" padding="20px">
         {canWrite && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: data.remarks.length ? 18 : 0 }} className="racco-no-print">
-            <textarea value={remarkText} onChange={(e) => setRemarkText(e.target.value)} rows={3} placeholder="Add a dated remark for this child…" style={textarea} />
+            <textarea value={remarkText} onChange={(e) => { setRemarkText(e.target.value); if (!e.target.value) setPolishJob(null); }} rows={3} placeholder="Add a dated remark for this child…" style={textarea} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <Button variant="ghost" onClick={aiPolish} disabled={!remarkText.trim() || aiBusy} iconLeft={<Icon name="sparkles" size={15} />}>Polish with AI</Button>
               <Button variant="primary" onClick={addRemark} iconLeft={<Icon name="plus" size={16} />} disabled={!remarkText.trim()}>Add remark</Button>
@@ -475,6 +540,12 @@ export default function ChildProgressReport() {
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-strong)' }}>{aiModal.title}</span>
             </div>
             <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {aiModal.generatedAt && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--text-muted)' }}>
+                  <span>Drafted {new Date(aiModal.generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} — ready before you clicked.</span>
+                  <Button variant="ghost" onClick={() => { setAiModal(null); aiModal.onRegenerate?.(); }} iconLeft={<Icon name="refresh-cw" size={14} />}>Regenerate</Button>
+                </div>
+              )}
               {aiModal.editable ? (
                 <textarea value={aiModal.draft} onChange={(e) => setAiModal({ ...aiModal, draft: e.target.value })} rows={12} style={textarea} />
               ) : (
@@ -484,6 +555,12 @@ export default function ChildProgressReport() {
             </div>
             <div style={{ padding: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Button variant="secondary" onClick={() => setAiModal(null)}>Close</Button>
+              {aiModal.feedback && !aiModal.feedbackSent && (
+                <>
+                  <Button variant="ghost" onClick={() => { sendAiFeedback(aiModal.jobId, 'accepted'); setAiModal({ ...aiModal, feedbackSent: true }); }} iconLeft={<Icon name="thumbs-up" size={15} />}>Useful</Button>
+                  <Button variant="ghost" onClick={() => { sendAiFeedback(aiModal.jobId, 'discarded'); setAiModal({ ...aiModal, feedbackSent: true }); }} iconLeft={<Icon name="thumbs-down" size={15} />}>Not useful</Button>
+                </>
+              )}
               {aiModal.onConfirm && <Button variant="primary" onClick={() => aiModal.onConfirm(aiModal.draft)} iconLeft={<Icon name="check" size={16} />}>Confirm & save</Button>}
             </div>
           </div>
