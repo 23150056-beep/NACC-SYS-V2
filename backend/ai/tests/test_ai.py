@@ -213,3 +213,90 @@ class PromptHardeningTest(AIBase):
         self._auth("p@racco1.gov.ph")
         resp = self.client.post("/api/ai/polish-remark/", {"text": "x"}, format="json")
         self.assertEqual(resp.data["draft"], "Mika's ok")
+
+
+class ImmediateThread:
+    """Stand-in for threading.Thread that runs the target synchronously."""
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self._target, self._args, self._kwargs = target, args, kwargs or {}
+
+    def start(self):
+        self._target(*self._args, **self._kwargs)
+
+
+class PrefetchBriefTest(AIBase):
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone
+        from scheduling.models import Appointment
+        self.appt = Appointment.objects.create(
+            child=self.child, psychologist=self.psy,
+            start=timezone.localtime().replace(hour=23, minute=0),
+            status=Appointment.SCHEDULED)
+
+    def test_latest_404_when_none(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.get(f"/api/ai/brief/child/{self.child.id}/latest/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_latest_returns_todays_brief(self):
+        AIJob.objects.create(job_type="brief", input_ref=f"child:{self.child.id}",
+                             output_text="Cached brief.", ok=True, created_by=self.psy)
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.get(f"/api/ai/brief/child/{self.child.id}/latest/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["draft"], "Cached brief.")
+        self.assertIn("generated_at", resp.data)
+
+    def test_latest_scoped_to_assigned(self):
+        other = User.objects.create_user(
+            email="o@racco1.gov.ph", username="o", password="pass1234", role=self.psy_role)
+        AIJob.objects.create(job_type="brief", input_ref=f"child:{self.child.id}",
+                             output_text="Cached.", ok=True, created_by=self.psy)
+        self._auth("o@racco1.gov.ph")
+        resp = self.client.get(f"/api/ai/brief/child/{self.child.id}/latest/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_prefetch_disabled_503(self):
+        self._auth("p@racco1.gov.ph")
+        self.assertEqual(self.client.post("/api/ai/prefetch-briefs/").status_code, 503)
+
+    @patch("ai.briefs.threading.Thread", ImmediateThread)
+    @patch("ai.services.get_ai_client", return_value=FakeClient("Prefetched."))
+    def test_prefetch_generates_for_todays_appointments(self, _mock):
+        self._enable()
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post("/api/ai/prefetch-briefs/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["queued"], [self.child.id])
+        job = AIJob.objects.get(job_type="brief")
+        self.assertEqual(job.output_text, "Prefetched.")
+
+    @patch("ai.briefs.threading.Thread", ImmediateThread)
+    @patch("ai.services.get_ai_client", return_value=FakeClient())
+    def test_prefetch_skips_when_today_brief_exists(self, _mock):
+        self._enable()
+        AIJob.objects.create(job_type="brief", input_ref=f"child:{self.child.id}",
+                             output_text="Existing.", ok=True, created_by=self.psy)
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post("/api/ai/prefetch-briefs/")
+        self.assertEqual(resp.data["queued"], [])
+        self.assertEqual(resp.data["skipped"], [self.child.id])
+        self.assertEqual(AIJob.objects.filter(job_type="brief").count(), 1)
+
+    @patch("ai.briefs.threading.Thread", ImmediateThread)
+    @patch("ai.services.get_ai_client", return_value=FakeClient())
+    def test_prefetch_scoped_for_psychologist(self, _mock):
+        from django.utils import timezone
+        from scheduling.models import Appointment
+        self._enable()
+        other_psy = User.objects.create_user(
+            email="o@racco1.gov.ph", username="o", password="pass1234", role=self.psy_role)
+        other_child = Child.objects.create(fullname="Ben Cruz", assigned_psychologist=other_psy)
+        Appointment.objects.create(
+            child=other_child, psychologist=other_psy,
+            start=timezone.localtime().replace(hour=23, minute=0),
+            status=Appointment.SCHEDULED)
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post("/api/ai/prefetch-briefs/")
+        self.assertEqual(resp.data["queued"], [self.child.id])

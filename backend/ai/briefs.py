@@ -1,7 +1,13 @@
 """Pre-session brief assembly, shared by the on-demand view and the prefetcher (F2)."""
+import threading
 from datetime import date
 
+from django.db import connection
+from django.utils import timezone
+
 from ai import prompts
+from ai.models import AIJob
+from ai.services import AIUnavailable, run_job
 
 
 def _age(child):
@@ -36,3 +42,47 @@ def build_brief_prompt(child):
         problems="; ".join(p.description for p in problems) or "none open",
         remarks="\n".join(f"- {r.date}: {r.text[:200]}" for r in remarks) or "- none",
     )
+
+
+_inflight_lock = threading.Lock()
+_inflight = set()
+
+
+def latest_brief_job(child_id):
+    """Newest successful brief for this child generated today, or None."""
+    return AIJob.objects.filter(
+        job_type="brief", input_ref=f"child:{child_id}", ok=True,
+        created_at__date=timezone.localdate()).order_by("-created_at").first()
+
+
+def prefetch_briefs(children, user):
+    """Generate today-briefs for the given children in one background thread.
+    Returns (queued_ids, skipped_ids). Ollama on CPU must never run concurrent
+    generations, so all work is sequential inside a single daemon thread."""
+    queued, skipped = [], []
+    with _inflight_lock:
+        for child in children:
+            if child.id in _inflight or latest_brief_job(child.id):
+                skipped.append(child.id)
+            else:
+                _inflight.add(child.id)
+                queued.append(child)
+    if queued:
+        threading.Thread(target=_generate_all, args=(queued, user), daemon=True).start()
+    return [c.id for c in queued], skipped
+
+
+def _generate_all(children, user):
+    try:
+        for child in children:
+            try:
+                run_job("brief", f"child:{child.id}", build_brief_prompt(child),
+                        prompts.SYSTEM, user)
+            except AIUnavailable:
+                pass  # audit row already logged by run_job; prefetch is best-effort
+            finally:
+                with _inflight_lock:
+                    _inflight.discard(child.id)
+    finally:
+        if not connection.in_atomic_block:  # tests run inside a transaction
+            connection.close()

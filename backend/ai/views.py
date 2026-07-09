@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import generics, status, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -6,11 +7,12 @@ from rest_framework.views import APIView
 from accounts.models import Role
 from accounts.permissions import IsAdministrator, IsAdminOrStaff, CanViewResults
 from ai import prompts
-from ai.briefs import build_brief_prompt
+from ai.briefs import build_brief_prompt, latest_brief_job, prefetch_briefs
 from ai.models import AISetting, AIJob
 from ai.services import AIUnavailable, DISCLAIMER, feature_enabled, run_job
 from children.models import Child
 from clinical.models import PsychologicalReport
+from scheduling.models import Appointment
 
 
 def _role(request):
@@ -164,3 +166,40 @@ class CensusNarrativeView(APIView):
         except AIUnavailable:
             return _gate("census_narrative")
         return Response({"draft": text, "job_id": job.id, "disclaimer": DISCLAIMER})
+
+
+class LatestBriefView(APIView):
+    """F2 — return today's cached brief instantly (404 when none)."""
+    permission_classes = [CanViewResults]
+
+    def get(self, request, child_id):
+        try:
+            child = Child.objects.get(pk=child_id)
+        except Child.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if _role(request) == Role.PSYCHOLOGIST and \
+                child.assigned_psychologist_id != request.user.id:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        job = latest_brief_job(child.id)
+        if not job:
+            return Response({"detail": "No brief generated today."},
+                            status=status.HTTP_404_NOT_FOUND)
+        return Response({"draft": job.output_text, "job_id": job.id,
+                         "generated_at": job.created_at, "disclaimer": DISCLAIMER})
+
+
+class PrefetchBriefsView(APIView):
+    """F2 — queue background brief generation for today's scheduled appointments."""
+    permission_classes = [CanViewResults]
+
+    def post(self, request):
+        if not feature_enabled("brief"):
+            return _gate("brief")
+        appts = Appointment.objects.filter(
+            status=Appointment.SCHEDULED,
+            start__date=timezone.localdate()).select_related("child")
+        if _role(request) == Role.PSYCHOLOGIST:
+            appts = appts.filter(child__assigned_psychologist=request.user)
+        children = list({a.child_id: a.child for a in appts}.values())
+        queued, skipped = prefetch_briefs(children, request.user)
+        return Response({"queued": queued, "skipped": skipped})
