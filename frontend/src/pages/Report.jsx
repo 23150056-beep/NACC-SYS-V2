@@ -204,7 +204,20 @@ export default function Report() {
                         <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{f.child_name}</div>
                         <div className="racco-mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{caseRef(f.child)}</div>
                       </td>
-                      <td style={td}>{f.original_filename}</td>
+                      <td style={td}>
+                        {f.original_filename}
+                        {f.ai_summary && (
+                          <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-100)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Icon name="sparkles" size={12} style={{ color: 'var(--blue-600)' }} />
+                              <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--blue-700)' }}>
+                                AI summary {f.ai_summary_confirmed ? '· confirmed' : '· draft (unconfirmed)'}
+                              </span>
+                            </div>
+                            <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{f.ai_summary}</p>
+                          </div>
+                        )}
+                      </td>
                       <td style={td}>{f.description || '—'}</td>
                       <td style={td}>{f.uploaded_by_name || '—'}</td>
                       <td style={td}>{(f.created_at || '').slice(0, 10)}</td>

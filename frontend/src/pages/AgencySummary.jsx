@@ -11,7 +11,7 @@ export default function AgencySummary() {
   const toast = useToast();
   const [range, setRange] = useState('monthly');
   const [data, setData] = useState(null);
-  const [narrative, setNarrative] = useState('');
+  const [narrative, setNarrative] = useState(null); // { text, jobId, feedbackSent }
   const [aiBusy, setAiBusy] = useState(false);
 
   const generateNarrative = async () => {
@@ -25,7 +25,7 @@ export default function AgencySummary() {
           by_case_type: d.by_case_type, terminations_by_reason: d.terminations_by_reason,
         },
       });
-      setNarrative(resp.draft);
+      setNarrative({ text: resp.draft, jobId: resp.job_id, feedbackSent: false });
     } catch (err) {
       toast.error(err.response?.status === 503
         ? 'AI assistance is switched off or unreachable.'
@@ -73,8 +73,14 @@ export default function AgencySummary() {
 
       {narrative && (
         <Card eyebrow="AI-drafted narrative" title="Monthly summary paragraph" padding="20px" style={{ marginBottom: 20 }}>
-          <p style={{ fontSize: 13.5, color: 'var(--text-body)', lineHeight: 1.65, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{narrative}</p>
+          <p style={{ fontSize: 13.5, color: 'var(--text-body)', lineHeight: 1.65, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{narrative.text}</p>
           <Alert disclaimer title="Draft only.">AI-drafted decision support — review and edit before including it in the agency report.</Alert>
+          {!narrative.feedbackSent && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }} className="racco-no-print">
+              <Button variant="ghost" onClick={() => { api.post(`/ai/jobs/${narrative.jobId}/feedback/`, { outcome: 'accepted' }).catch(() => {}); setNarrative({ ...narrative, feedbackSent: true }); }} iconLeft={<Icon name="thumbs-up" size={15} />}>Useful</Button>
+              <Button variant="ghost" onClick={() => { api.post(`/ai/jobs/${narrative.jobId}/feedback/`, { outcome: 'discarded' }).catch(() => {}); setNarrative(null); }} iconLeft={<Icon name="thumbs-down" size={15} />}>Discard</Button>
+            </div>
+          )}
         </Card>
       )}
 

@@ -15,9 +15,11 @@ export default function Settings() {
   const [agency, setAgency] = useState('St. Joseph Orphanage');
   const [sync, setSync] = useState(true);
   const [ai, setAi] = useState(null);
+  const [metrics, setMetrics] = useState(null);
 
   useEffect(() => {
     api.get('/ai/settings/').then((r) => setAi(r.data)).catch(() => {});
+    api.get('/ai/metrics/').then((r) => setMetrics(r.data)).catch(() => {});
   }, []);
 
   const saveConfig = async () => {
@@ -76,6 +78,39 @@ export default function Settings() {
                   </div>
                 ))}
               </div>
+              {metrics && (
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 14, color: 'var(--text-strong)', marginBottom: 8 }}>Usage (last 30 days)</div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                          {['Feature', 'Runs', 'Success', 'Avg latency', 'Accepted', 'Edited', 'Discarded'].map((h) => (
+                            <th key={h} style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(metrics).map(([k, m]) => {
+                          const d = m.last_30_days;
+                          return (
+                            <tr key={k}>
+                              <td style={{ padding: '6px 8px' }}>{m.label}</td>
+                              <td style={{ padding: '6px 8px' }}>{d.runs}</td>
+                              <td style={{ padding: '6px 8px' }}>{d.runs ? Math.round((d.ok / d.runs) * 100) + '%' : '—'}</td>
+                              <td style={{ padding: '6px 8px' }}>{d.avg_latency_ms != null ? (d.avg_latency_ms / 1000).toFixed(1) + ' s' : '—'}</td>
+                              <td style={{ padding: '6px 8px' }}>{d.outcomes.accepted}</td>
+                              <td style={{ padding: '6px 8px' }}>{d.outcomes.edited}</td>
+                              <td style={{ padding: '6px 8px' }}>{d.outcomes.discarded}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>Acceptance is recorded when a draft is confirmed, inserted, or rated by the psychologist.</p>
+                </div>
+              )}
             </div>
           )}
         </Card>
