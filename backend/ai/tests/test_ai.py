@@ -16,8 +16,10 @@ class FakeClient:
 
     def __init__(self, reply="Drafted text."):
         self.reply = reply
+        self.prompts = []
 
     def generate(self, prompt, system=None):
+        self.prompts.append(prompt)
         return self.reply
 
 
@@ -167,3 +169,47 @@ class PolishAndNarrativeTest(AIBase):
         self._auth("a@racco1.gov.ph")
         resp = self.client.post("/api/ai/census-narrative/", {"stats": {"total": 3}}, format="json")
         self.assertEqual(resp.status_code, 200)
+
+
+class PromptHardeningTest(AIBase):
+    @patch("ai.services.get_ai_client")
+    def test_brief_prompt_includes_age_and_gender(self, mock_get):
+        from datetime import date
+        fake = FakeClient()
+        mock_get.return_value = fake
+        self._enable()
+        self.child.birth_date = date(2018, 3, 1)
+        self.child.gender = "Female"
+        self.child.save()
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post(f"/api/ai/brief/child/{self.child.id}/")
+        self.assertEqual(resp.status_code, 200)
+        prompt = fake.prompts[0]
+        self.assertIn("Sex/gender: Female", prompt)
+        self.assertRegex(prompt, r"Age: \d+")
+        self.assertIn("Do not state age, gender, or any other detail", prompt)
+
+    @patch("ai.services.get_ai_client")
+    def test_brief_prompt_unknown_when_missing(self, mock_get):
+        fake = FakeClient()
+        mock_get.return_value = fake
+        self._enable()
+        self._auth("p@racco1.gov.ph")
+        self.client.post(f"/api/ai/brief/child/{self.child.id}/")
+        prompt = fake.prompts[0]
+        self.assertIn("Age: unknown", prompt)
+        self.assertIn("Sex/gender: unspecified", prompt)
+
+    def test_normalize_output(self):
+        from ai.services import _normalize_output
+        self.assertEqual(
+            _normalize_output("Mika’s day — all “fine” now"),
+            "Mika's day - all \"fine\" now")
+
+    @patch("ai.services.get_ai_client")
+    def test_run_job_normalizes(self, mock_get):
+        mock_get.return_value = FakeClient(reply="Mika’s ok")
+        self._enable()
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post("/api/ai/polish-remark/", {"text": "x"}, format="json")
+        self.assertEqual(resp.data["draft"], "Mika's ok")

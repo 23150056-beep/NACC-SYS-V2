@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from accounts.models import Role
 from accounts.permissions import IsAdministrator, IsAdminOrStaff, CanViewResults
 from ai import prompts
+from ai.briefs import build_brief_prompt
 from ai.models import AISetting, AIJob
 from ai.services import AIUnavailable, DISCLAIMER, feature_enabled, run_job
 from children.models import Child
@@ -59,26 +60,7 @@ class PreSessionBriefView(APIView):
                 child.assigned_psychologist_id != request.user.id:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        pa = child.pre_assessments.filter(status="completed").first()
-        result = child.result_entries.first()
-        remarks = list(child.remarks.all()[:5])
-        problems = list(child.problems.filter(resolved=False)[:6])
-        survey = child.opinionnaire_invites.filter(status="submitted").first()
-        survey_text = "\n".join(
-            f"- {q}: {str(a)[:300]}" for q, a in (survey.answers or {}).items()
-        ) if survey else "- not answered yet"
-        prompt = prompts.BRIEF.format(
-            opinionnaire=survey_text,
-            first_name=child.fullname.split(" ")[0] if child.fullname else "the child",
-            case_type=child.case_type or "unspecified",
-            pre_assessment=(f"{pa.date}, instruments: "
-                            f"{', '.join(i.title for i in pa.instruments.all()) or 'none'}"
-                            if pa else "none completed"),
-            latest_result=(f"{result.classification or ''} — {result.summary[:400]}"
-                           if result else "none"),
-            problems="; ".join(p.description for p in problems) or "none open",
-            remarks="\n".join(f"- {r.date}: {r.text[:200]}" for r in remarks) or "- none",
-        )
+        prompt = build_brief_prompt(child)
         try:
             text, job = run_job("brief", f"child:{child.id}", prompt,
                                 prompts.SYSTEM, request.user)

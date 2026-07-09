@@ -61,6 +61,18 @@ def feature_enabled(feature):
     return s.enabled and getattr(s, f"feature_{feature}", False)
 
 
+_PUNCT_MAP = {"‘": "'", "’": "'", "“": '"', "”": '"',
+              "–": "-", "—": "-", " ": " "}
+
+
+def _normalize_output(text):
+    """Small local models emit curly quotes/dashes that render as mojibake in
+    some consoles and PDFs — normalize deterministically instead of prompting."""
+    for bad, good in _PUNCT_MAP.items():
+        text = text.replace(bad, good)
+    return text
+
+
 def run_job(job_type, input_ref, prompt, system, user):
     """Run one audited AI call. Returns (text, job). Raises AIUnavailable."""
     setting = AISetting.load()
@@ -73,6 +85,7 @@ def run_job(job_type, input_ref, prompt, system, user):
                              error=str(exc)[:255], model_used=setting.model_name,
                              created_by=user)
         raise
+    text = _normalize_output(text)
     latency = int((time.monotonic() - started) * 1000)
     job = AIJob.objects.create(
         job_type=job_type, input_ref=input_ref, output_text=text,

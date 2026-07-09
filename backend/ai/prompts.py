@@ -10,6 +10,8 @@ is about to see this child. Summarize current status, recent findings, open
 problems, and one or two suggested focus points for today's session.
 
 Child (first name): {first_name}
+Age: {age}
+Sex/gender: {gender}
 Case type: {case_type}
 Latest pre-assessment: {pre_assessment}
 Latest result entry: {latest_result}
@@ -19,6 +21,9 @@ Recent remarks:
 Child's own answers to the agency self-report opinionnaire (verbatim; note any
 recurring emotional keywords or distress indicators):
 {opinionnaire}
+
+Use only the facts provided above. Do not state age, gender, or any other detail
+not given. Refer to the child by first name only.
 """
 
 DOC_INTELLIGENCE = """From the psychologist's own report text below, draft:
