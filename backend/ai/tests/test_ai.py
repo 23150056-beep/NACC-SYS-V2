@@ -362,3 +362,93 @@ class CaseStudySummaryTest(AIBase):
         resp = self.client.post(f"/api/ai/confirm-case-study-summary/{self.cs.id}/",
                                 {"text": "x"}, format="json")
         self.assertEqual(resp.status_code, 403)
+
+
+class FeedbackAndMetricsTest(AIBase):
+    def _job(self, **kw):
+        base = dict(job_type="brief", input_ref=f"child:{self.child.id}",
+                    output_text="Draft.", ok=True, created_by=self.psy, latency_ms=100)
+        base.update(kw)
+        return AIJob.objects.create(**base)
+
+    def test_feedback_sets_outcome(self):
+        job = self._job()
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post(f"/api/ai/jobs/{job.id}/feedback/",
+                                {"outcome": "accepted"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        job.refresh_from_db()
+        self.assertEqual(job.outcome, "accepted")
+        self.assertTrue(job.accepted)
+
+    def test_feedback_discarded(self):
+        job = self._job()
+        self._auth("p@racco1.gov.ph")
+        self.client.post(f"/api/ai/jobs/{job.id}/feedback/",
+                         {"outcome": "discarded"}, format="json")
+        job.refresh_from_db()
+        self.assertEqual(job.outcome, "discarded")
+        self.assertFalse(job.accepted)
+
+    def test_feedback_invalid_outcome_400(self):
+        job = self._job()
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post(f"/api/ai/jobs/{job.id}/feedback/",
+                                {"outcome": "loved-it"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_feedback_creator_only(self):
+        job = self._job()
+        other = User.objects.create_user(
+            email="o@racco1.gov.ph", username="o", password="pass1234", role=self.psy_role)
+        self._auth("o@racco1.gov.ph")
+        resp = self.client.post(f"/api/ai/jobs/{job.id}/feedback/",
+                                {"outcome": "accepted"}, format="json")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_metrics_admin_only(self):
+        self._auth("p@racco1.gov.ph")
+        self.assertEqual(self.client.get("/api/ai/metrics/").status_code, 403)
+
+    def test_metrics_aggregates(self):
+        self._job(outcome="accepted", latency_ms=100)
+        self._job(outcome="edited", latency_ms=300)
+        self._job(ok=False, error="boom", latency_ms=None)
+        self._auth("a@racco1.gov.ph")
+        resp = self.client.get("/api/ai/metrics/")
+        self.assertEqual(resp.status_code, 200)
+        brief = resp.data["brief"]["all_time"]
+        self.assertEqual(brief["runs"], 3)
+        self.assertEqual(brief["ok"], 2)
+        self.assertEqual(brief["errors"], 1)
+        self.assertEqual(brief["avg_latency_ms"], 200)
+        self.assertEqual(brief["outcomes"]["accepted"], 1)
+        self.assertEqual(brief["outcomes"]["edited"], 1)
+
+
+class ConfirmOutcomeTest(AIBase):
+    def setUp(self):
+        super().setUp()
+        self.report = PsychologicalReport.objects.create(
+            child=self.child, author=self.psy, file="reports/x.pdf",
+            extracted_text="The child shows improvement.")
+
+    @patch("ai.services.get_ai_client", return_value=FakeClient("Draft summary."))
+    def test_confirm_unchanged_marks_accepted(self, _mock):
+        self._enable()
+        self._auth("p@racco1.gov.ph")
+        self.client.post(f"/api/ai/summarize-report/{self.report.id}/")
+        self.client.post(f"/api/ai/confirm-summary/{self.report.id}/",
+                         {"text": "Draft summary."}, format="json")
+        job = AIJob.objects.get(job_type="doc_intelligence")
+        self.assertEqual(job.outcome, "accepted")
+
+    @patch("ai.services.get_ai_client", return_value=FakeClient("Draft summary."))
+    def test_confirm_changed_marks_edited(self, _mock):
+        self._enable()
+        self._auth("p@racco1.gov.ph")
+        self.client.post(f"/api/ai/summarize-report/{self.report.id}/")
+        self.client.post(f"/api/ai/confirm-summary/{self.report.id}/",
+                         {"text": "Heavily edited."}, format="json")
+        job = AIJob.objects.get(job_type="doc_intelligence")
+        self.assertEqual(job.outcome, "edited")

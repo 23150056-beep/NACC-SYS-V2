@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.db.models import Avg, Count
 from django.utils import timezone
 from rest_framework import generics, status, serializers
 from rest_framework.permissions import IsAuthenticated
@@ -122,8 +125,7 @@ class ConfirmReportSummaryView(APIView):
         report.ai_summary = text
         report.ai_summary_confirmed = True
         report.save(update_fields=["ai_summary", "ai_summary_confirmed"])
-        AIJob.objects.filter(input_ref=f"report:{report.id}",
-                             job_type="doc_intelligence").update(accepted=True)
+        _set_confirm_outcome("doc_intelligence", f"report:{report.id}", text)
         return Response({"ai_summary": report.ai_summary, "confirmed": True})
 
 
@@ -258,6 +260,72 @@ class ConfirmCaseStudySummaryView(APIView):
         cs.ai_summary = text
         cs.ai_summary_confirmed = True
         cs.save(update_fields=["ai_summary", "ai_summary_confirmed"])
-        AIJob.objects.filter(input_ref=f"casestudy:{cs.id}",
-                             job_type="case_study").update(accepted=True)
+        _set_confirm_outcome("case_study", f"casestudy:{cs.id}", text)
         return Response({"ai_summary": cs.ai_summary, "confirmed": True})
+
+
+def _set_confirm_outcome(job_type, input_ref, confirmed_text):
+    """After a human confirm, record whether the draft was used verbatim or edited."""
+    job = AIJob.objects.filter(job_type=job_type, input_ref=input_ref,
+                               ok=True).order_by("-created_at").first()
+    if not job:
+        return
+    same = " ".join(confirmed_text.split()) == " ".join((job.output_text or "").split())
+    job.outcome = AIJob.ACCEPTED if same else AIJob.EDITED
+    job.accepted = True
+    job.save(update_fields=["outcome", "accepted"])
+
+
+class AIJobFeedbackView(APIView):
+    """F4 — record the human verdict on a draft (accepted / edited / discarded)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, job_id):
+        try:
+            job = AIJob.objects.get(pk=job_id)
+        except AIJob.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if _role(request) != Role.ADMINISTRATOR and job.created_by_id != request.user.id:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        outcome = request.data.get("outcome")
+        if outcome not in (AIJob.ACCEPTED, AIJob.EDITED, AIJob.DISCARDED):
+            return Response({"outcome": "Must be accepted, edited, or discarded."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        job.outcome = outcome
+        job.accepted = outcome != AIJob.DISCARDED
+        job.save(update_fields=["outcome", "accepted"])
+        return Response({"id": job.id, "outcome": job.outcome})
+
+
+class AIMetricsView(APIView):
+    """F4 — per-feature usage aggregates for the admin settings panel."""
+    permission_classes = [IsAdministrator]
+
+    def get(self, request):
+        since = timezone.now() - timedelta(days=30)
+
+        def bucket(qs):
+            # Note: aggregating a "ok"-named alias alongside Q(ok=...) filters in the
+            # same .aggregate() call collides with the real "ok" field during Django's
+            # expression resolution (FieldError: 'ok' is an aggregate) — so runs/ok/
+            # errors are computed as separate counts instead of one conditional
+            # aggregate() call.
+            totals = qs.aggregate(runs=Count("id"), avg_latency_ms=Avg("latency_ms"))
+            agg = {
+                "runs": totals["runs"],
+                "ok": qs.filter(ok=True).count(),
+                "errors": qs.filter(ok=False).count(),
+                "avg_latency_ms": (round(totals["avg_latency_ms"])
+                                   if totals["avg_latency_ms"] is not None else None),
+            }
+            counts = dict(qs.values_list("outcome").annotate(n=Count("id")))
+            agg["outcomes"] = {k: counts.get(k, 0)
+                               for k in ("pending", "accepted", "edited", "discarded")}
+            return agg
+
+        data = {}
+        for jt, label in AIJob.TYPE_CHOICES:
+            qs = AIJob.objects.filter(job_type=jt)
+            data[jt] = {"label": label, "all_time": bucket(qs),
+                        "last_30_days": bucket(qs.filter(created_at__gte=since))}
+        return Response(data)

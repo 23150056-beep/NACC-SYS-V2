@@ -4,6 +4,7 @@ from ai.views import (
     ConfirmReportSummaryView, RemarkPolishView, CensusNarrativeView,
     LatestBriefView, PrefetchBriefsView,
     CaseStudySummaryDraftView, ConfirmCaseStudySummaryView,
+    AIJobFeedbackView, AIMetricsView,
 )
 
 urlpatterns = [
@@ -17,4 +18,6 @@ urlpatterns = [
     path("ai/confirm-case-study-summary/<int:case_study_id>/", ConfirmCaseStudySummaryView.as_view(), name="ai-confirm-case-study-summary"),
     path("ai/polish-remark/", RemarkPolishView.as_view(), name="ai-polish-remark"),
     path("ai/census-narrative/", CensusNarrativeView.as_view(), name="ai-census-narrative"),
+    path("ai/jobs/<int:job_id>/feedback/", AIJobFeedbackView.as_view(), name="ai-job-feedback"),
+    path("ai/metrics/", AIMetricsView.as_view(), name="ai-metrics"),
 ]

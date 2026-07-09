@@ -38,6 +38,10 @@ class AIJob(models.Model):
         ("case_study", "Case Study Summary"),
     ]
 
+    PENDING, ACCEPTED, EDITED, DISCARDED = "pending", "accepted", "edited", "discarded"
+    OUTCOME_CHOICES = [(PENDING, "Pending"), (ACCEPTED, "Accepted as-is"),
+                       (EDITED, "Edited then used"), (DISCARDED, "Discarded")]
+
     job_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
     input_ref = models.CharField(max_length=150, blank=True)  # e.g. "child:12", "report:3"
     output_text = models.TextField(blank=True)
@@ -46,6 +50,7 @@ class AIJob(models.Model):
     ok = models.BooleanField(default=True)
     error = models.CharField(max_length=255, blank=True)
     accepted = models.BooleanField(null=True, blank=True)  # human-in-the-loop verdict
+    outcome = models.CharField(max_length=10, choices=OUTCOME_CHOICES, default=PENDING)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="ai_jobs")
