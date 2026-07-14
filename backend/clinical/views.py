@@ -1,3 +1,4 @@
+from django.db.models import Q
 from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -93,12 +94,19 @@ class AgencyFormTemplateViewSet(viewsets.ModelViewSet):
         if form_type:
             qs = qs.filter(form_type=form_type)
         if _role(self.request) == Role.PSYCHOLOGIST:
-            qs = qs.filter(owner=self.request.user)
+            qs = qs.filter(Q(owner=self.request.user) | Q(owner__isnull=True))
         return qs
 
     def _log(self, obj, action_name):
         log_activity(self.request.user, action_name, ActivityLog.RECORD,
                      entity_type="AgencyForm", entity_label=obj.title, entity_id=obj.id)
+
+    def _assert_can_write(self, obj):
+        # Shared (owner=None) official forms are admin-managed; psychologists
+        # may only modify templates they own.
+        if _role(self.request) == Role.PSYCHOLOGIST and obj.owner_id != self.request.user.id:
+            raise PermissionDenied(
+                "Official agency forms can only be edited by an administrator.")
 
     def perform_create(self, serializer):
         if _role(self.request) == Role.PSYCHOLOGIST:
@@ -108,11 +116,17 @@ class AgencyFormTemplateViewSet(viewsets.ModelViewSet):
         self._log(obj, ActivityLog.CREATED)
 
     def perform_update(self, serializer):
+        self._assert_can_write(serializer.instance)
         self._log(serializer.save(), ActivityLog.UPDATED)
+
+    def perform_destroy(self, instance):
+        self._assert_can_write(instance)
+        instance.delete()
 
     @action(detail=True, methods=["post"])
     def deactivate(self, request, pk=None):
         obj = self.get_object()
+        self._assert_can_write(obj)
         obj.active = False
         obj.save(update_fields=["active", "updated_at"])
         self._log(obj, ActivityLog.ARCHIVED)

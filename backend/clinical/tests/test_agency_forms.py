@@ -59,3 +59,40 @@ class InterviewRespondentTest(AgencyFormsBase):
         self.assertEqual(resp.data["respondent"], "Custodian/PAP")
         listed = self.client.get(f"/api/interviews/?child={self.child.id}")
         self.assertEqual(listed.data[0]["respondent"], "Custodian/PAP")
+
+
+class SharedTemplateAccessTest(AgencyFormsBase):
+    def setUp(self):
+        super().setUp()
+        self.shared = AgencyFormTemplate.objects.create(
+            form_type="consent", title="Official Consent", owner=None,
+            attestation=True, active=True)
+        self.own = AgencyFormTemplate.objects.create(
+            form_type="consent", title="My Consent", owner=self.psy,
+            attestation=True, active=True)
+        self.others = AgencyFormTemplate.objects.create(
+            form_type="consent", title="Other Consent", owner=self.other,
+            attestation=True, active=True)
+
+    def test_psychologist_sees_own_and_shared_only(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.get("/api/form-templates/")
+        self.assertEqual({t["title"] for t in resp.data},
+                         {"Official Consent", "My Consent"})
+
+    def test_psychologist_cannot_edit_shared_template(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.patch(f"/api/form-templates/{self.shared.id}/", {
+            "title": "Renamed", "attestation": True}, format="json")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_psychologist_cannot_deactivate_shared_template(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post(f"/api/form-templates/{self.shared.id}/deactivate/")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_admin_can_edit_shared_template(self):
+        self._auth("a@racco1.gov.ph")
+        resp = self.client.patch(f"/api/form-templates/{self.shared.id}/", {
+            "title": "Official Consent (2025)", "attestation": True}, format="json")
+        self.assertEqual(resp.status_code, 200)
