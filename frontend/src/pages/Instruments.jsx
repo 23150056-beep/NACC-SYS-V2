@@ -181,8 +181,12 @@ export default function Instruments() {
                       <td style={td}>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button title="Print blank form (e.g. for guardians to sign)" onClick={() => printBlankForm(t)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="printer" size={15} /></button>
-                          <button title="Edit" onClick={() => { setError(''); setTpl({ ...t, fields: t.fields?.length ? t.fields : [blankField()], attestation: false }); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
-                          <button title="Deactivate" onClick={() => deactivateTemplate(t)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="archive" size={15} /></button>
+                          {(isAdmin || t.owner !== null) && (
+                            <>
+                              <button title="Edit" onClick={() => { setError(''); setTpl({ ...t, fields: t.fields?.length ? t.fields : [blankField()], attestation: false }); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
+                              <button title="Deactivate" onClick={() => deactivateTemplate(t)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="archive" size={15} /></button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -402,7 +402,7 @@ function InterviewStep({ child, templates, onDone, setError }) {
           </FormField>
           {respondent === 'Other…' && (
             <FormField label="Respondent (other)">
-              <Input value={respondentOther} onChange={(e) => setRespondentOther(e.target.value)} placeholder="e.g. Teacher" />
+              <Input value={respondentOther} onChange={(e) => setRespondentOther(e.target.value)} placeholder="e.g. Teacher" maxLength={100} />
             </FormField>
           )}
         </>
@@ -432,7 +432,7 @@ function InterviewStep({ child, templates, onDone, setError }) {
         )
       ))}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-        <Button variant="ghost" onClick={() => onDone(firstSavedId)}>
+        <Button variant="ghost" onClick={() => onDone(firstSavedId)} disabled={saving}>
           {savedCount > 0 ? 'Continue' : 'Skip for now'}
         </Button>
         <Button variant="ghost" onClick={saveAndAnother} disabled={!templateId || saving}>
