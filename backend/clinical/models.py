@@ -68,6 +68,9 @@ class AgencyFormTemplate(models.Model):
 
     form_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
     title = models.CharField(max_length=200)
+    # Document prose shown before the fields (on screen and in print).
+    # Lines starting with "## " render as section headings.
+    body = models.TextField(blank=True, default="")
     # Versioned field definitions: [{"label": ..., "field_type": ..., "options": [...]}, ...]
     fields = models.JSONField(default=list, blank=True)
     version = models.PositiveIntegerField(default=1)
@@ -125,6 +128,8 @@ class ClinicalInterviewRecord(models.Model):
     template = models.ForeignKey(
         AgencyFormTemplate, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="interview_records")
+    # Who answered this interview (e.g. "Custodian/PAP", "Child", "Guardian").
+    respondent = models.CharField(max_length=100, blank=True, default="")
     answers = models.JSONField(default=dict, blank=True)
     interviewer = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,

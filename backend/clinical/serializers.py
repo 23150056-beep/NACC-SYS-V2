@@ -27,7 +27,7 @@ class AgencyFormTemplateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AgencyFormTemplate
-        fields = ["id", "form_type", "title", "fields", "version",
+        fields = ["id", "form_type", "title", "body", "fields", "version",
                   "owner", "owner_name", "attestation", "attested_at",
                   "active", "updated_at"]
         read_only_fields = ["attested_at", "version"]
@@ -45,7 +45,10 @@ class AgencyFormTemplateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         # Any content edit bumps the version; re-attestation is enforced by the field validator.
-        if "fields" in validated_data and validated_data["fields"] != instance.fields:
+        content_changed = (
+            ("fields" in validated_data and validated_data["fields"] != instance.fields)
+            or ("body" in validated_data and validated_data["body"] != instance.body))
+        if content_changed:
             instance.version += 1
             validated_data["attested_at"] = timezone.now()
         return super().update(instance, validated_data)
@@ -73,7 +76,8 @@ class ClinicalInterviewRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClinicalInterviewRecord
         fields = ["id", "child", "child_name", "template", "template_title",
-                  "answers", "interviewer", "interviewer_name", "date", "created_at"]
+                  "answers", "respondent", "interviewer", "interviewer_name",
+                  "date", "created_at"]
         read_only_fields = ["interviewer"]
 
 
@@ -82,13 +86,15 @@ class PreAssessmentSerializer(serializers.ModelSerializer):
     psychologist_name = serializers.CharField(source="psychologist.fullname", read_only=True, default=None)
     instrument_titles = serializers.SerializerMethodField()
     consent_status = serializers.CharField(source="consent.status", read_only=True, default=None)
+    interview_respondent = serializers.CharField(
+        source="interview.respondent", read_only=True, default=None)
 
     class Meta:
         model = PreAssessment
         fields = ["id", "child", "child_name", "psychologist", "psychologist_name",
                   "date", "status", "instruments", "instrument_titles",
-                  "consent", "consent_status", "interview", "notes",
-                  "completed_at", "created_at"]
+                  "consent", "consent_status", "interview", "interview_respondent",
+                  "notes", "completed_at", "created_at"]
         read_only_fields = ["psychologist", "status", "completed_at"]
 
     def get_instrument_titles(self, obj):
