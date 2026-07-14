@@ -22,6 +22,7 @@ const FORM_TYPES = [
   { v: 'self_report_gov', label: 'Self-Report (Government Form)' },
 ];
 const FIELD_TYPES = [
+  { v: 'section', label: 'Section heading' },
   { v: 'text', label: 'Short text' },
   { v: 'long_text', label: 'Long text' },
   { v: 'date', label: 'Date' },
@@ -31,7 +32,7 @@ const FIELD_TYPES = [
 
 const EMPTY_INSTRUMENT = { title: '', publisher: '', category: 'other', age_range: '', notes: '', owner: '' };
 const blankField = () => ({ label: '', field_type: 'text', options: [] });
-const EMPTY_TEMPLATE = { form_type: 'consent', title: '', fields: [blankField()], attestation: false };
+const EMPTY_TEMPLATE = { form_type: 'consent', title: '', body: '', fields: [blankField()], attestation: false };
 
 export default function Instruments() {
   const { refresh: refreshActivity } = useActivity();
@@ -84,7 +85,7 @@ export default function Instruments() {
     if (!tpl.title.trim()) { setError('Title is required.'); return; }
     if (!tpl.attestation) { setError('You must tick the attestation checkbox to save an agency form.'); return; }
     const payload = {
-      form_type: tpl.form_type, title: tpl.title, attestation: true,
+      form_type: tpl.form_type, title: tpl.title, body: tpl.body || '', attestation: true,
       fields: tpl.fields.filter((f) => f.label.trim()).map((f) => ({
         label: f.label, field_type: f.field_type,
         options: f.field_type === 'choice' ? (f.options || []) : [],
@@ -246,6 +247,10 @@ export default function Instruments() {
                 </Select>
               </FormField>
               <FormField label="Title" required><Input value={tpl.title} onChange={(e) => setTpl({ ...tpl, title: e.target.value })} /></FormField>
+              <FormField label="Document text" hint="Optional. Shown before the fields on screen and in print. Lines starting with '## ' become section headings.">
+                <textarea value={tpl.body || ''} onChange={(e) => setTpl({ ...tpl, body: e.target.value })} rows={8}
+                  style={{ width: '100%', resize: 'vertical', padding: '11px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 13.5, lineHeight: 1.55 }} />
+              </FormField>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
                 <div className="racco-eyebrow" style={{ fontSize: 11 }}>Fields ({tpl.fields.length})</div>
