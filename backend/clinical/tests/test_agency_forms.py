@@ -1,5 +1,6 @@
 from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from accounts.models import Role
 from children.models import Child
 from clinical.models import AgencyFormTemplate
@@ -110,3 +111,47 @@ class SharedTemplateAccessTest(AgencyFormsBase):
         self.assertEqual(resp.status_code, 200)
         self.own.refresh_from_db()
         self.assertEqual(self.own.owner_id, self.psy.id)
+
+
+class SeedAgencyFormsTest(APITestCase):
+    def test_seed_creates_three_templates_idempotently(self):
+        call_command("seed_agency_forms")
+        self.assertEqual(AgencyFormTemplate.objects.count(), 3)
+
+        consent = AgencyFormTemplate.objects.get(form_type="consent")
+        self.assertEqual(consent.title,
+                         "Informed Consent for Psychological Evaluation (Adoption)")
+        self.assertEqual(consent.fields, [])
+        for heading in ["## I. PURPOSE", "## II. NATURE", "## III. VOLUNTARY",
+                        "## IV. CONFIDENTIALITY", "## V. RISKS", "## VI. BENEFITS",
+                        "## VII. FEES", "## VIII. ACCURACY", "## IX. QUESTIONS",
+                        "## X. CONSENT"]:
+            self.assertIn(heading, consent.body)
+
+        pap = AgencyFormTemplate.objects.get(
+            title="Adoption Pre-Assessment Questionnaire — Custodian/PAP")
+        self.assertEqual(
+            len([f for f in pap.fields if f["field_type"] == "section"]), 9)
+        self.assertEqual(
+            len([f for f in pap.fields if f["field_type"] == "long_text"]), 42)
+
+        kid = AgencyFormTemplate.objects.get(
+            title="Adoption Pre-Assessment Questionnaire — Child")
+        self.assertEqual(
+            len([f for f in kid.fields if f["field_type"] == "section"]), 8)
+        self.assertEqual(
+            len([f for f in kid.fields if f["field_type"] == "long_text"]), 38)
+        self.assertIn("age", kid.body)
+
+        for t in AgencyFormTemplate.objects.all():
+            self.assertIsNone(t.owner)
+            self.assertTrue(t.attestation)
+            self.assertIsNotNone(t.attested_at)
+
+        # Re-run: no duplicates, and in-app edits are preserved.
+        consent.body = "EDITED"
+        consent.save()
+        call_command("seed_agency_forms")
+        self.assertEqual(AgencyFormTemplate.objects.count(), 3)
+        consent.refresh_from_db()
+        self.assertEqual(consent.body, "EDITED")
