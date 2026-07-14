@@ -58,10 +58,16 @@ but `AgencyFormTemplateViewSet.get_queryset()` currently filters
 psychologists to `owner=self.request.user` only.
 
 - **Read:** psychologists see `Q(owner=user) | Q(owner__isnull=True)`.
+  Other psychologists' templates stay invisible to them (queryset-scoped →
+  404, which avoids leaking their existence).
 - **Write:** psychologists may modify/deactivate **only templates they own**;
-  attempts on shared (`owner=None`) or other-owned templates → 403.
-  Implement as an object-level check in the viewset (update / partial_update /
-  destroy / `deactivate` action). Admins are unrestricted (unchanged).
+  attempts on shared (`owner=None`) templates → 403. Implement as an
+  object-level check in the viewset (update / partial_update / destroy /
+  `deactivate` action). Admins are unrestricted (unchanged).
+- **Owner reassignment is admin-only:** a psychologist's `owner` value on
+  create AND update is forced to themselves (silently ignored if supplied),
+  so they can never promote a template into the shared pool or hand it to
+  another user.
 
 ## 3. Seed command
 
