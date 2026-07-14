@@ -3,10 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { Card, Button, Badge, Input, Select, FormField, Alert, EmptyState, Avatar, Icon, PAGE } from '../ui';
+import { printBlankForm } from '../utils/printForm';
 
 const STEPS = ['Child', 'Consent', 'Interview', 'Instruments', 'Problems', 'Complete'];
 
 const textarea = { width: '100%', resize: 'vertical', padding: '11px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 14, lineHeight: 1.55 };
+
+function FormBody({ body }) {
+  if (!body) return null;
+  return (
+    <div className="racco-scroll" style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '14px 16px', background: 'var(--ink-50)', marginBottom: 14 }}>
+      {body.split('\n').map((line, i) => {
+        const s = line.trim();
+        if (!s) return null;
+        if (s.startsWith('## ')) return <div key={i} style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--text-strong)', margin: '12px 0 4px', letterSpacing: '0.02em' }}>{s.slice(3)}</div>;
+        return <p key={i} style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 8px', lineHeight: 1.6 }}>{s}</p>;
+      })}
+    </div>
+  );
+}
 
 export default function PreAssessment() {
   const toast = useToast();
@@ -285,6 +300,18 @@ function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError
               {templates.map((t) => <option key={t.id} value={t.id}>{t.title} (v{t.version})</option>)}
             </Select>
           </FormField>
+          {form.template && (() => {
+            const sel = templates.find((t) => String(t.id) === String(form.template));
+            if (!sel) return null;
+            return (
+              <div style={{ marginBottom: 4 }}>
+                <FormBody body={sel.body} />
+                <Button variant="ghost" onClick={() => printBlankForm(sel)} iconLeft={<Icon name="printer" size={15} />}>
+                  Print blank form
+                </Button>
+              </div>
+            );
+          })()}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <FormField label="Signer name" required><Input value={form.signer_name} onChange={(e) => setForm({ ...form, signer_name: e.target.value })} /></FormField>
             <FormField label="Relationship to child"><Input value={form.signer_relationship} onChange={(e) => setForm({ ...form, signer_relationship: e.target.value })} placeholder="e.g. Foster mother" /></FormField>
