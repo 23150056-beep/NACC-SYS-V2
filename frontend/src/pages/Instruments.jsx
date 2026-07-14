@@ -4,6 +4,7 @@ import { useActivity } from '../context/ActivityContext';
 import { useAuth } from '../context/AuthContext';
 import { Card, Button, Badge, Input, Select, FormField, Alert, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
+import { printBlankForm } from '../utils/printForm';
 
 const CATEGORIES = [
   { v: 'cognitive', label: 'Cognitive' },
@@ -99,33 +100,6 @@ export default function Instruments() {
     }
   };
 
-  // Print a blank copy of an agency form (e.g. for the guardian to sign the
-  // consent on paper). Client-side only — opens a print-friendly window.
-  const printBlank = (t) => {
-    const w = window.open('', '_blank', 'width=800,height=900');
-    if (!w) return;
-    const lines = (t.fields || []).map((f) => {
-      if (f.field_type === 'yes_no') return `<div class="q">${f.label} &nbsp;&nbsp; ☐ Yes &nbsp;&nbsp; ☐ No</div>`;
-      if (f.field_type === 'choice') return `<div class="q">${f.label}<br/>${(f.options || []).map((o) => `☐ ${o}`).join(' &nbsp;&nbsp; ')}</div>`;
-      if (f.field_type === 'long_text') return `<div class="q">${f.label}<div class="box"></div></div>`;
-      return `<div class="q">${f.label}: <span class="line"></span></div>`;
-    }).join('');
-    w.document.write(`<!doctype html><html><head><title>${t.title}</title><style>
-      body{font-family:Georgia,serif;max-width:680px;margin:40px auto;color:#111;line-height:1.6}
-      h1{font-size:20px;text-align:center} .sub{text-align:center;font-size:12px;color:#555;margin-bottom:28px}
-      .q{margin:18px 0;font-size:14px} .line{display:inline-block;border-bottom:1px solid #111;min-width:320px}
-      .box{border:1px solid #111;height:90px;margin-top:6px}
-      .sig{margin-top:48px;display:flex;justify-content:space-between;font-size:13px}
-      .sig div{border-top:1px solid #111;padding-top:4px;width:44%;text-align:center}
-    </style></head><body>
-      <h1>${t.title}</h1>
-      <div class="sub">NACC – Regional Alternative Child Care Office I · Agency-authored form (v${t.version})</div>
-      ${lines}
-      <div class="sig"><div>Signature over printed name</div><div>Date</div></div>
-      <script>window.print();</` + `script></body></html>`);
-    w.document.close();
-  };
-
   const deactivateTemplate = async (t) => {
     if (!window.confirm(`Deactivate “${t.title}”?`)) return;
     try { await api.post(`/form-templates/${t.id}/deactivate/`); toast.success(`“${t.title}” deactivated`); load(); refreshActivity(); }
@@ -205,7 +179,7 @@ export default function Instruments() {
                       {isAdmin && <td style={td}>{t.owner_name || '—'}</td>}
                       <td style={td}>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button title="Print blank form (e.g. for guardians to sign)" onClick={() => printBlank(t)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="printer" size={15} /></button>
+                          <button title="Print blank form (e.g. for guardians to sign)" onClick={() => printBlankForm(t)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="printer" size={15} /></button>
                           <button title="Edit" onClick={() => { setError(''); setTpl({ ...t, fields: t.fields?.length ? t.fields : [blankField()], attestation: false }); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
                           <button title="Deactivate" onClick={() => deactivateTemplate(t)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="archive" size={15} /></button>
                         </div>
