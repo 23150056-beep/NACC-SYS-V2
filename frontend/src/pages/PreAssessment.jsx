@@ -332,18 +332,42 @@ function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError
   );
 }
 
+const RESPONDENT_OPTIONS = ['Custodian/PAP', 'Child', 'Guardian', 'Other…'];
+
 function InterviewStep({ child, templates, onDone, setError }) {
   const [templateId, setTemplateId] = useState('');
   const [answers, setAnswers] = useState({});
+  const [respondent, setRespondent] = useState('');
+  const [respondentOther, setRespondentOther] = useState('');
+  const [firstSavedId, setFirstSavedId] = useState(null);
+  const [savedCount, setSavedCount] = useState(0);
   const tpl = templates.find((t) => String(t.id) === String(templateId));
 
-  const save = async () => {
+  const respondentValue = respondent === 'Other…' ? respondentOther.trim() : respondent;
+
+  const saveRecord = async () => {
+    const { data } = await api.post('/interviews/', {
+      child: child.id, template: templateId || null, answers,
+      respondent: respondentValue,
+    });
+    if (firstSavedId === null) setFirstSavedId(data.id);
+    setSavedCount((n) => n + 1);
+    return data;
+  };
+
+  const resetForm = () => { setTemplateId(''); setAnswers({}); setRespondent(''); setRespondentOther(''); };
+
+  const saveAndAnother = async () => {
+    setError('');
+    try { await saveRecord(); resetForm(); }
+    catch (err) { setError(JSON.stringify(err.response?.data || 'Could not save the interview.')); }
+  };
+
+  const saveAndContinue = async () => {
     setError('');
     try {
-      const { data } = await api.post('/interviews/', {
-        child: child.id, template: templateId || null, answers,
-      });
-      onDone(data.id);
+      const data = await saveRecord();
+      onDone(firstSavedId ?? data.id);
     } catch (err) {
       setError(JSON.stringify(err.response?.data || 'Could not save the interview.'));
     }
@@ -353,6 +377,7 @@ function InterviewStep({ child, templates, onDone, setError }) {
     <Card eyebrow="Step 3" title="Clinical interview" padding="22px">
       <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
         Record the answers to your own Clinical Interview form, or skip if not conducted today.
+        {savedCount > 0 && <strong> {savedCount} interview{savedCount > 1 ? 's' : ''} saved this session.</strong>}
       </p>
       <FormField label="Interview form template">
         <Select value={templateId} onChange={(e) => { setTemplateId(e.target.value); setAnswers({}); }}>
@@ -360,8 +385,27 @@ function InterviewStep({ child, templates, onDone, setError }) {
           {templates.map((t) => <option key={t.id} value={t.id}>{t.title} (v{t.version})</option>)}
         </Select>
       </FormField>
-      {tpl && (tpl.fields || []).map((f) => (
-        <FormField key={f.label} label={f.label}>
+      {tpl && (
+        <>
+          <FormBody body={tpl.body} />
+          <FormField label="Respondent" hint="Who is answering this interview.">
+            <Select value={respondent} onChange={(e) => setRespondent(e.target.value)}>
+              <option value="">—</option>
+              {RESPONDENT_OPTIONS.map((r) => <option key={r}>{r}</option>)}
+            </Select>
+          </FormField>
+          {respondent === 'Other…' && (
+            <FormField label="Respondent (other)">
+              <Input value={respondentOther} onChange={(e) => setRespondentOther(e.target.value)} placeholder="e.g. Teacher" />
+            </FormField>
+          )}
+        </>
+      )}
+      {tpl && (tpl.fields || []).map((f, idx) => (
+        f.field_type === 'section' ? (
+          <div key={`${f.label}-${idx}`} style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--text-strong)', margin: '18px 0 6px', letterSpacing: '0.03em', textTransform: 'uppercase' }}>{f.label}</div>
+        ) : (
+        <FormField key={`${f.label}-${idx}`} label={f.label}>
           {f.field_type === 'long_text' ? (
             <textarea value={answers[f.label] || ''} onChange={(e) => setAnswers({ ...answers, [f.label]: e.target.value })} rows={3} style={textarea} />
           ) : f.field_type === 'date' ? (
@@ -379,10 +423,18 @@ function InterviewStep({ child, templates, onDone, setError }) {
             <Input value={answers[f.label] || ''} onChange={(e) => setAnswers({ ...answers, [f.label]: e.target.value })} />
           )}
         </FormField>
+        )
       ))}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-        <Button variant="ghost" onClick={() => onDone(null)}>Skip for now</Button>
-        <Button variant="primary" onClick={save} disabled={!templateId} iconLeft={<Icon name="save" size={16} />}>Save interview & continue</Button>
+        <Button variant="ghost" onClick={() => onDone(firstSavedId)}>
+          {savedCount > 0 ? 'Continue' : 'Skip for now'}
+        </Button>
+        <Button variant="ghost" onClick={saveAndAnother} disabled={!templateId}>
+          Save & interview another respondent
+        </Button>
+        <Button variant="primary" onClick={saveAndContinue} disabled={!templateId} iconLeft={<Icon name="save" size={16} />}>
+          Save interview & continue
+        </Button>
       </div>
     </Card>
   );
