@@ -341,6 +341,7 @@ function InterviewStep({ child, templates, onDone, setError }) {
   const [respondentOther, setRespondentOther] = useState('');
   const [firstSavedId, setFirstSavedId] = useState(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [saving, setSaving] = useState(false);
   const tpl = templates.find((t) => String(t.id) === String(templateId));
 
   const respondentValue = respondent === 'Other…' ? respondentOther.trim() : respondent;
@@ -359,17 +360,22 @@ function InterviewStep({ child, templates, onDone, setError }) {
 
   const saveAndAnother = async () => {
     setError('');
+    setSaving(true);
     try { await saveRecord(); resetForm(); }
     catch (err) { setError(JSON.stringify(err.response?.data || 'Could not save the interview.')); }
+    finally { setSaving(false); }
   };
 
   const saveAndContinue = async () => {
     setError('');
+    setSaving(true);
     try {
       const data = await saveRecord();
       onDone(firstSavedId ?? data.id);
     } catch (err) {
       setError(JSON.stringify(err.response?.data || 'Could not save the interview.'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -429,10 +435,10 @@ function InterviewStep({ child, templates, onDone, setError }) {
         <Button variant="ghost" onClick={() => onDone(firstSavedId)}>
           {savedCount > 0 ? 'Continue' : 'Skip for now'}
         </Button>
-        <Button variant="ghost" onClick={saveAndAnother} disabled={!templateId}>
+        <Button variant="ghost" onClick={saveAndAnother} disabled={!templateId || saving}>
           Save & interview another respondent
         </Button>
-        <Button variant="primary" onClick={saveAndContinue} disabled={!templateId} iconLeft={<Icon name="save" size={16} />}>
+        <Button variant="primary" onClick={saveAndContinue} disabled={!templateId || saving} iconLeft={<Icon name="save" size={16} />}>
           Save interview & continue
         </Button>
       </div>
