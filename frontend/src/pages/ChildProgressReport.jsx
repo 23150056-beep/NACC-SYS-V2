@@ -243,7 +243,7 @@ export default function ChildProgressReport() {
           <div className="racco-scroll" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
               <thead><tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                {['Date', 'Status', 'Consent', 'Instrument Titles', 'Psychologist'].map((h) => (
+                {['Date', 'Status', 'Consent', 'Interview', 'Instrument Titles', 'Psychologist'].map((h) => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr></thead>
@@ -253,6 +253,7 @@ export default function ChildProgressReport() {
                     <td style={td}>{p.date}</td>
                     <td style={td}><Badge tone={p.status === 'completed' ? 'success' : 'amber'} size="sm" dot>{p.status.replace('_', ' ')}</Badge></td>
                     <td style={td}>{p.consent ? (p.consent_status || 'linked') : '—'}</td>
+                    <td style={td}>{p.interview ? (p.interview_respondent || 'recorded') : '—'}</td>
                     <td style={{ ...td, whiteSpace: 'normal' }}>{(p.instrument_titles || []).join(', ') || '—'}</td>
                     <td style={td}>{p.psychologist_name || '—'}</td>
                   </tr>
