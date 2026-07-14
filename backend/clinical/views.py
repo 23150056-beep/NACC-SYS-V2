@@ -117,7 +117,14 @@ class AgencyFormTemplateViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         self._assert_can_write(serializer.instance)
-        self._log(serializer.save(), ActivityLog.UPDATED)
+        if _role(self.request) == Role.PSYCHOLOGIST:
+            # Force the owner so a psychologist can't self-promote their own
+            # template into the admin-only shared pool via owner=null (or
+            # hand it off to another user) by supplying "owner" in the body.
+            obj = serializer.save(owner=self.request.user)
+        else:
+            obj = serializer.save()
+        self._log(obj, ActivityLog.UPDATED)
 
     def perform_destroy(self, instance):
         self._assert_can_write(instance)

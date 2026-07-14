@@ -96,3 +96,17 @@ class SharedTemplateAccessTest(AgencyFormsBase):
         resp = self.client.patch(f"/api/form-templates/{self.shared.id}/", {
             "title": "Official Consent (2025)", "attestation": True}, format="json")
         self.assertEqual(resp.status_code, 200)
+
+    def test_psychologist_cannot_touch_other_owned_template(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.patch(f"/api/form-templates/{self.others.id}/", {
+            "title": "Renamed", "attestation": True}, format="json")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_psychologist_cannot_reassign_owner(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.patch(f"/api/form-templates/{self.own.id}/", {
+            "owner": None, "attestation": True}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.own.refresh_from_db()
+        self.assertEqual(self.own.owner_id, self.psy.id)
