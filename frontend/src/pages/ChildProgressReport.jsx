@@ -34,6 +34,7 @@ export default function ChildProgressReport() {
   const [polishJob, setPolishJob] = useState(null);     // { id, draft } — last polish result
   const [qr, setQr] = useState(null); // { token, url }
   const [surveyTemplates, setSurveyTemplates] = useState([]);
+  const [openInterviews, setOpenInterviews] = useState({}); // interview id -> expanded?
   const isStaffOrAdmin = ['Administrator', 'Staff'].includes(user?.role_name);
 
   const load = () => api.get(`/reports/child/${id}/`).then((r) => setData(r.data)).catch(() => setData('error'));
@@ -260,6 +261,55 @@ export default function ChildProgressReport() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Clinical interviews — every respondent, incl. secondary "Save & interview another" records */}
+      <Card eyebrow="Clinical workflow" title="Clinical interviews" padding="0" style={{ marginBottom: 18 }}>
+        {(data.interviews || []).length === 0 ? (
+          <div style={{ padding: 18, fontSize: 13, color: 'var(--text-muted)' }}>
+            No clinical interviews recorded yet — they are conducted in the pre-assessment wizard.
+          </div>
+        ) : (
+          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.interviews.map((iv) => {
+              const entries = Object.entries(iv.answers || {}).filter(([, a]) => String(a ?? '').trim() !== '');
+              const open = !!openInterviews[iv.id];
+              return (
+                <div key={iv.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14, background: 'var(--ink-50)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Badge tone="brand" size="sm">{iv.respondent || 'Respondent not recorded'}</Badge>
+                      <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{iv.template_title || 'Free-form interview'}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{iv.date} · {iv.interviewer_name || '—'}</span>
+                      {entries.length > 0 && (
+                        <Button variant="ghost" className="racco-no-print"
+                          onClick={() => setOpenInterviews((s) => ({ ...s, [iv.id]: !s[iv.id] }))}
+                          iconLeft={<Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} />}>
+                          {open ? 'Hide answers' : `Answers (${entries.length})`}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {entries.length === 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 6 }}>No written answers recorded.</div>
+                  )}
+                  {open && entries.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                      {entries.map(([q, a]) => (
+                        <div key={q} style={{ fontSize: 13, lineHeight: 1.5 }}>
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{q}</span>{' '}
+                          <span style={{ color: 'var(--text-strong)' }}>— {a}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
