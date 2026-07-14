@@ -17,7 +17,7 @@ from clinical.models import (
 from clinical.serializers import (
     PreAssessmentSerializer, ResultEntrySerializer, RemarkNoteSerializer,
     TreatmentPlanSerializer, PsychologicalReportSerializer, ProblemEntrySerializer,
-    CaseStudySerializer, OpinionnaireInviteSerializer,
+    CaseStudySerializer, OpinionnaireInviteSerializer, ClinicalInterviewRecordSerializer,
 )
 
 
@@ -26,8 +26,8 @@ def _role(request):
 
 
 class ChildReportView(generics.GenericAPIView):
-    """Chart view of one child: profile + pre-assessment log + result entries
-    + report files + remarks + treatment plan + open problems."""
+    """Chart view of one child: profile + pre-assessment log + clinical interviews
+    + result entries + report files + remarks + treatment plan + open problems."""
     permission_classes = [CanViewResults]
 
     def get(self, request, child_id):
@@ -47,6 +47,7 @@ class ChildReportView(generics.GenericAPIView):
         problems = child.problems.all()
         case_studies = child.case_studies.select_related("uploaded_by")
         opinionnaires = child.opinionnaire_invites.select_related("template")
+        interviews = child.clinical_interviews.select_related("template", "interviewer")
 
         # Carry-history control: a newly assigned psychologist without history
         # sees only records they authored themselves.
@@ -56,10 +57,12 @@ class ChildReportView(generics.GenericAPIView):
             remarks = remarks.filter(author=request.user)
             plans = plans.filter(author=request.user)
             files = files.filter(author=request.user)
+            interviews = interviews.filter(interviewer=request.user)
 
         return Response({
             "child": ChildSerializer(child).data,
             "pre_assessments": PreAssessmentSerializer(pas, many=True).data,
+            "interviews": ClinicalInterviewRecordSerializer(interviews, many=True).data,
             "result_entries": ResultEntrySerializer(results, many=True).data,
             "remarks": RemarkNoteSerializer(remarks, many=True).data,
             "treatment_plans": TreatmentPlanSerializer(plans, many=True).data,

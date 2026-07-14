@@ -2,7 +2,10 @@ from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from accounts.models import Role
 from children.models import Child, TerminationRecord
-from clinical.models import InstrumentCatalog, PreAssessment, ResultEntry, RemarkNote
+from clinical.models import (
+    AgencyFormTemplate, ClinicalInterviewRecord, InstrumentCatalog,
+    PreAssessment, ResultEntry, RemarkNote,
+)
 
 User = get_user_model()
 
@@ -195,3 +198,54 @@ class DashboardTest(ReportsBase):
         self._auth("p@racco1.gov.ph")
         resp = self.client.get("/api/reports/dashboard/")
         self.assertEqual(resp.data["total_children"], 1)
+
+
+class ChildReportInterviewsTest(ReportsBase):
+    """The chart bundle must list EVERY ClinicalInterviewRecord of the child —
+    not just the one linked to a PreAssessment via its `interview` FK."""
+
+    def setUp(self):
+        super().setUp()
+        self.template = AgencyFormTemplate.objects.create(
+            form_type="clinical_interview",
+            title="Adoption Pre-Assessment Questionnaire — Child",
+            owner=self.psy, attestation=True)
+        pa = self.child.pre_assessments.first()
+        self.primary = ClinicalInterviewRecord.objects.create(
+            child=self.child, respondent="Custodian/PAP", interviewer=self.psy,
+            answers={"Reason for adoption": "Kinship adoption, long planned."})
+        pa.interview = self.primary
+        pa.save()
+        # Secondary respondent: exists ONLY as a ClinicalInterviewRecord.
+        self.secondary = ClinicalInterviewRecord.objects.create(
+            child=self.child, template=self.template, respondent="Child",
+            interviewer=self.psy,
+            answers={"How do you feel about the family?": "Happy."})
+
+    def test_bundle_lists_all_interviews_not_just_the_linked_one(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.get(f"/api/reports/child/{self.child.id}/")
+        self.assertEqual(resp.status_code, 200)
+        ids = {i["id"] for i in resp.data["interviews"]}
+        self.assertEqual(ids, {self.primary.id, self.secondary.id})
+
+    def test_interview_rows_carry_display_fields(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.get(f"/api/reports/child/{self.child.id}/")
+        row = next(i for i in resp.data["interviews"] if i["id"] == self.secondary.id)
+        self.assertEqual(row["respondent"], "Child")
+        self.assertEqual(row["template_title"],
+                         "Adoption Pre-Assessment Questionnaire — Child")
+        self.assertEqual(row["answers"], {"How do you feel about the family?": "Happy."})
+        self.assertIn("interviewer_name", row)
+        self.assertIn("date", row)
+
+    def test_carry_history_off_scopes_interviews_to_own(self):
+        self.child.assigned_psychologist = self.other
+        self.child.assignee_sees_history = False
+        self.child.save()
+        mine = ClinicalInterviewRecord.objects.create(
+            child=self.child, respondent="Guardian", interviewer=self.other)
+        self._auth("o@racco1.gov.ph")
+        resp = self.client.get(f"/api/reports/child/{self.child.id}/")
+        self.assertEqual([i["id"] for i in resp.data["interviews"]], [mine.id])
