@@ -1701,10 +1701,84 @@ Imports needed at the top of PreAssessment.jsx: `iconBtn` from `'../ui'` and `us
 
 ---
 
+### Task 18: Assignment-time availability picker in the child record form
+
+**Why:** When staff add (or reassign) a child, they must see each psychologist's availability BEFORE choosing who to assign — pick someone who actually has open hours, not just the smallest caseload.
+
+**Files:**
+- Modify: `frontend/src/pages/Children.jsx`
+
+**Interfaces:**
+- Consumes: existing `GET /api/availability/` (staff/admin already receive ALL psychologists' active blocks — verified: `AvailabilityBlockViewSet` is `IsAuthenticated` with no role filter) and existing `GET /api/psychologists/` (`{id, name, caseload}`). NO backend changes.
+
+- [ ] **Step 1: Load blocks.** In `Children()` add `const [blocks, setBlocks] = useState([]);` and in `load()` (only when `canManage`):
+
+```jsx
+if (canManage) api.get('/availability/').then((r) => setBlocks(r.data)).catch(() => {});
+```
+
+Pass `blocks` into `<ChildForm ... blocks={blocks} />`.
+
+- [ ] **Step 2: Availability comparison panel.** In `ChildForm` (which receives `blocks`), add helpers at the top of the function:
+
+```jsx
+const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']; // matches AvailabilityBlock 0=Monday
+const availFor = (pid) => blocks.filter((b) => String(b.psychologist) === String(pid));
+const blockLabel = (b) => `${b.date || DAY_ABBR[b.weekday]} ${String(b.start_time).slice(0, 5)}–${String(b.end_time).slice(0, 5)}`;
+```
+
+Directly BELOW the "Assign Psychologist" `<Select>` (Task 3 already hides that select for psychologists — this panel is likewise admin/staff-only by construction), render a clickable comparison list; clicking a row selects that psychologist in the form:
+
+```jsx
+{psychologists.length > 0 && (
+  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12, background: 'var(--ink-50)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="racco-eyebrow" style={{ fontSize: 10 }}>Availability — check before you assign</div>
+    {psychologists.map((p) => {
+      const av = availFor(p.id);
+      const on = String(form.psychologist) === String(p.id);
+      return (
+        <button type="button" key={p.id}
+          onClick={() => setForm({ ...form, psychologist: String(p.id) })}
+          aria-pressed={on}
+          style={{ textAlign: 'left', padding: '9px 11px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)', border: `1px solid ${on ? 'var(--blue-500)' : 'var(--border)'}`, background: on ? 'var(--blue-50)' : 'var(--surface)', transition: 'var(--transition-base)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: on ? 'var(--blue-700)' : 'var(--text-strong)' }}>{p.name}</span>
+            <Badge tone={p.caseload >= 5 ? 'amber' : 'neutral'} size="sm">{p.caseload} case{p.caseload === 1 ? '' : 's'}</Badge>
+          </div>
+          {av.length === 0 ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--amber-600, #b45309)', fontWeight: 600 }}>
+              <Icon name="alert-triangle" size={12} /> No availability set — sessions can’t be booked yet
+            </span>
+          ) : (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {av.map((b) => <Badge key={b.id} tone="success" size="sm">{blockLabel(b)}</Badge>)}
+            </div>
+          )}
+        </button>
+      );
+    })}
+  </div>
+)}
+```
+
+(If the design tokens lack `--amber-600`, use `var(--amber-500)`. The select and the panel stay in sync because both read/write `form.psychologist`.)
+
+- [ ] **Step 3: Verify** — `npm run build`; browser as staff: Add Record → the panel lists every psychologist with weekly/dated availability chips and caseload; clicking a row selects them in the dropdown; a psychologist with no blocks shows the amber warning; same panel appears when reassigning via Edit.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add frontend/src/pages/Children.jsx
+git commit -m "feat(records): psychologist availability panel at assignment time"
+```
+
+---
+
 ## Self-Review (done at plan time)
 
 - **Spec coverage (first batch):** psychologist edits assigned child → T1/T3; multidisciplinary "Google-Docs-like" collab → T2/T3 (scoped decision #1); calendar off sidebar + dashboard mini widget + click-to-fullscreen → T10; bento no-scroll dashboard + per-module scrolling → T10; grouped result entries per child → T9; terminated records archived for admin + reuse when a child returns → T4/T5; Previous Custodian / Address / Recommendation → T6; instrument module inside pre-assessment step 4 → T7/T8; new instrument title lists (children + PAP) → T7; ethical-consideration check → answered in chat + hardening T11.
 - **Spec coverage (adviser suggestions 1–13):** #1 name split → T12; #2 age 5–17 + required `*` → T13; #3 specific labels (Educational Placement, Place of Recovery) → T13; #4 LIFO records → T14; #5 weekday checkboxes → T15 step 4; #6 assigned child's next counseling slots → T15 steps 3/5/6; #7 staff sees psychologist availability → T15 step 6 (already works, verify); #8 clickable notifications → T16; #9 embedded readable consent → T17 (document text already renders; kept front-and-center); #10 remove Record New / On file toggle → T17; #11 consents in a bottom table → T17; #12 consent file preview → T17; #13 status function / add event → T15 step 5 (status actions already exist; slot-click booking added).
+- **Spec coverage (follow-up request):** availability visible BEFORE assigning a psychologist on the child record form → T18 (frontend-only; staff already have read access to all availability blocks).
 - **Known ambiguities intentionally flagged:** decisions #1–#13 at the top; confirm with the user before executing if any look wrong.
 - **Type consistency:** `expected_updated_at` (write-only, ISO string) and `updated_at` (read-only) used consistently across T1–T3; `terminations` list shape identical in T4 backend and T5 frontend; `audience` values `child|adoptive_parent|both` identical in T7 model, seed, and T8 filters; `InstrumentFormDrawer` props match both call sites; `next-slots` response shape identical in T15 backend, Schedule hints, and Children drawer; `has_scan`/`scan_filename`/`download` consistent between T17 backend and ConsentStep; T12's name-lock `validate()` REPLACES T1's fullname-only check (implement T1's version first, extend it in T12).
-- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T12→T13 sequential (validation builds on name parts). `Children.jsx` is touched by T3, T5, T6, T12, T13, T14, T15-step-6 — run those serially, never in parallel subagents. `PreAssessment.jsx` is touched by T8 and T17 — serialize. `Schedule.jsx`/`Topbar.jsx`/`Dashboard.jsx` overlap across T10, T15, T16 — serialize T10→T15→T16. Do T10 last among dashboard tasks if the in-flight Sidebar change hasn't landed yet. Suggested overall order: T1, T2, T3, T4, T5, T6, T12, T13, T14, T7, T8, T17, T9, T10, T15, T16, T11.
+- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T12→T13 sequential (validation builds on name parts). `Children.jsx` is touched by T3, T5, T6, T12, T13, T14, T15-step-6 — run those serially, never in parallel subagents. `PreAssessment.jsx` is touched by T8 and T17 — serialize. `Schedule.jsx`/`Topbar.jsx`/`Dashboard.jsx` overlap across T10, T15, T16 — serialize T10→T15→T16. Do T10 last among dashboard tasks if the in-flight Sidebar change hasn't landed yet. T18 also touches `Children.jsx` — include it in that serial chain. Suggested overall order: T1, T2, T3, T4, T5, T6, T12, T13, T14, T18, T7, T8, T17, T9, T10, T15, T16, T11.
