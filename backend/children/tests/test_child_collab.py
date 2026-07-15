@@ -114,3 +114,15 @@ class NameSplitTests(APITestCase):
             "birth_date": "2016-01-10",
         }, format="json")
         self.assertEqual(r.status_code, 400)
+
+    def test_create_with_whitespace_only_fullname_rejected(self):
+        r = self.client.post("/api/children/", {
+            "fullname": "   ", "birth_date": "2016-01-10",
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_with_whitespace_only_first_name_rejected(self):
+        r = self.client.post("/api/children/", {
+            "first_name": "   ", "birth_date": "2016-01-10",
+        }, format="json")
+        self.assertEqual(r.status_code, 400)

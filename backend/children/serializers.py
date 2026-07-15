@@ -88,15 +88,20 @@ class ChildSerializer(serializers.ModelSerializer):
             })
         return out
 
-    def create(self, validated_data):
+    def _legacy_fullname_parts(self):
         # Back-compat: some callers (and older API integrations) still create
         # a child by sending only "fullname", with no first/last name parts.
-        # fullname is read-only now, so it never reaches validated_data — split
-        # it the same way the split_existing_fullnames data migration does, so
-        # those callers keep working and Child.save() can still compose it.
+        # fullname is read-only now, so it never reaches validated_data/attrs —
+        # split it the same way the split_existing_fullnames data migration
+        # does. str.split() with no args already discards whitespace-only
+        # input (e.g. "   ".split() == []), so this never manufactures a name
+        # out of blank space.
+        legacy_fullname = (self.initial_data or {}).get("fullname")
+        return str(legacy_fullname).split() if legacy_fullname else []
+
+    def create(self, validated_data):
         if not validated_data.get("first_name") and not validated_data.get("last_name"):
-            legacy_fullname = (self.initial_data or {}).get("fullname")
-            parts = str(legacy_fullname).split() if legacy_fullname else []
+            parts = self._legacy_fullname_parts()
             if parts:
                 validated_data["last_name"] = parts[-1] if len(parts) > 1 else ""
                 validated_data["first_name"] = " ".join(parts[:-1]) if len(parts) > 1 else parts[0]
@@ -132,11 +137,13 @@ class ChildSerializer(serializers.ModelSerializer):
             # blank=True on the model, so DRF won't require any of them on
             # its own. Require a name in some form here — either the normal
             # first_name/last_name fields, or a legacy fullname-only payload
-            # (the same fallback create() accepts for backward compatibility).
+            # (the exact same acceptance test create()'s fallback uses, via
+            # _legacy_fullname_parts() — .strip() here matches .split()'s
+            # whitespace-only rejection there, so the two can't diverge).
             has_name = (
-                attrs.get("first_name")
-                or attrs.get("last_name")
-                or (self.initial_data or {}).get("fullname")
+                (attrs.get("first_name") or "").strip()
+                or (attrs.get("last_name") or "").strip()
+                or self._legacy_fullname_parts()
             )
             if not has_name:
                 raise serializers.ValidationError(
