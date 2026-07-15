@@ -31,6 +31,18 @@ class InstrumentSharingTests(APITestCase):
         self.assertEqual(r.status_code, 201)
         self.assertIsNone(InstrumentCatalog.objects.get(title="Shared One").owner)
 
+    def test_psychologist_cannot_delete_shared(self):
+        self.client.force_authenticate(self.psych)
+        r = self.client.delete(f"/api/instruments/{self.shared.id}/")
+        self.assertIn(r.status_code, (403, 404))
+        self.assertTrue(InstrumentCatalog.objects.filter(id=self.shared.id).exists())
+
+    def test_psychologist_cannot_reassign_owner_via_patch(self):
+        self.client.force_authenticate(self.psych)
+        self.client.patch(f"/api/instruments/{self.own.id}/", {"owner": None}, format="json")
+        self.own.refresh_from_db()
+        self.assertEqual(self.own.owner_id, self.psych.id)
+
     def test_seed_command_idempotent(self):
         call_command("seed_instrument_titles")
         first = InstrumentCatalog.objects.filter(owner__isnull=True).count()
