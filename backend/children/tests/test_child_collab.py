@@ -47,3 +47,36 @@ class PsychologistEditTests(APITestCase):
     def test_fullname_locked_on_update_for_everyone(self):
         r = self.patch(self.staff, self.child, {"fullname": "Renamed"})
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class ConcurrencyPresenceTests(APITestCase):
+    def setUp(self):
+        self.staff = make_user("s2@t.ph", Role.STAFF)
+        self.psych = make_user("p3@t.ph", Role.PSYCHOLOGIST)
+        self.child = Child.objects.create(fullname="Ana Cruz",
+                                          assigned_psychologist=self.psych)
+
+    def test_stale_write_conflicts(self):
+        self.client.force_authenticate(self.staff)
+        stale = "2000-01-01T00:00:00+00:00"
+        r = self.client.patch(f"/api/children/{self.child.id}/",
+                              {"education_level": "G1", "expected_updated_at": stale},
+                              format="json")
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("current", r.data)
+
+    def test_fresh_write_passes(self):
+        self.client.force_authenticate(self.staff)
+        current = self.client.get(f"/api/children/{self.child.id}/").data["updated_at"]
+        r = self.client.patch(f"/api/children/{self.child.id}/",
+                              {"education_level": "G1", "expected_updated_at": current},
+                              format="json")
+        self.assertEqual(r.status_code, 200)
+
+    def test_presence_roundtrip(self):
+        self.client.force_authenticate(self.psych)
+        self.client.post(f"/api/children/{self.child.id}/presence/")
+        self.client.force_authenticate(self.staff)
+        r = self.client.get(f"/api/children/{self.child.id}/presence/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["others"]), 1)

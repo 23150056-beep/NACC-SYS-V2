@@ -1,4 +1,6 @@
-﻿from rest_framework import viewsets, status
+﻿import time
+from django.core.cache import cache
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -59,7 +61,7 @@ class ChildViewSet(_ArchivableViewSet):
         # Terminate/advance have their own rule (admin OR the child's assigned
         # psychologist), enforced in the action body - RecordsAccess would
         # block psychologists.
-        if self.action in ("terminate", "advance_status"):
+        if self.action in ("terminate", "advance_status", "presence"):
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -76,6 +78,40 @@ class ChildViewSet(_ArchivableViewSet):
         if role == Role.PSYCHOLOGIST:
             qs = qs.filter(assigned_psychologist=self.request.user)
         return qs
+
+    def update(self, request, *args, **kwargs):
+        expected = request.data.get("expected_updated_at")
+        if expected:
+            instance = self.get_object()
+            # Serialize the current instance to get the updated_at in the same format as the client sees it
+            serialized = self.get_serializer(instance).data
+            actual = serialized.get("updated_at")
+            if actual != expected:
+                return Response(
+                    {"detail": "This record was updated by someone else while you were editing.",
+                     "current": serialized},
+                    status=status.HTTP_409_CONFLICT)
+        return super().update(request, *args, **kwargs)
+
+    PRESENCE_TTL = 30  # seconds a heartbeat stays visible
+
+    @action(detail=True, methods=["get", "post"])
+    def presence(self, request, pk=None):
+        child = self.get_object()
+        key = f"child-presence:{child.id}"
+        now = time.time()
+        entries = {k: v for k, v in (cache.get(key) or {}).items()
+                   if now - v["ts"] < self.PRESENCE_TTL}
+        if request.method == "POST":
+            entries[str(request.user.id)] = {
+                "name": getattr(request.user, "fullname", "") or request.user.get_username(),
+                "role": getattr(getattr(request.user, "role", None), "role_name", "") or "",
+                "ts": now,
+            }
+            cache.set(key, entries, self.PRESENCE_TTL * 2)
+        others = [{"name": v["name"], "role": v["role"]}
+                  for k, v in entries.items() if k != str(request.user.id)]
+        return Response({"others": others})
 
     def _log(self, obj, action_name):
         # Direct child-record notifications at the child's assigned psychologist.
