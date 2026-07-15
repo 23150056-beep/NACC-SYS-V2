@@ -40,9 +40,9 @@ function caseRef(id) {
   return `C-${String(id).padStart(4, '0')}`;
 }
 
-// V2 status chip: `Active · Foster Care` / `Inactive (Terminated)`.
+// V2 status chip: `Active · Foster Care` / `Archived (Terminated)`.
 function StatusChip({ child, size = 'sm' }) {
-  if (child.status === 'inactive') return <Badge tone="neutral" size={size} dot>Inactive (Terminated)</Badge>;
+  if (child.status === 'inactive') return <Badge tone="neutral" size={size} dot>Archived (Terminated)</Badge>;
   return <Badge tone="success" size={size} dot>Active{child.case_type ? ` · ${child.case_type}` : ''}</Badge>;
 }
 
@@ -98,7 +98,7 @@ export default function Children() {
 
   const STATUS_FILTERS = [
     { key: 'active', label: 'Active' },
-    { key: 'inactive', label: 'Inactive' },
+    { key: 'inactive', label: 'Archived' },
     { key: 'all', label: 'All' },
   ];
   const dotColor = { active: 'var(--success-500)', inactive: 'var(--text-faint)' };
@@ -153,6 +153,18 @@ export default function Children() {
     } catch (err) {
       const d = err.response?.data;
       toast.error(d?.note || d?.reason_category || d?.detail || 'Could not terminate the case.');
+    }
+  };
+
+  const reopen = async (c) => {
+    try {
+      await api.post(`/children/${c.id}/reopen/`);
+      toast.success(`${c.fullname}'s case is active again — previous records retained`);
+      setSel(null);
+      load();
+      refreshActivity();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not reopen the case.');
     }
   };
 
@@ -256,20 +268,21 @@ export default function Children() {
         )}
       </Card>
 
-      {sel && <ChildDrawer child={sel} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onClose={() => setSel(null)} />}
+      {sel && <ChildDrawer child={sel} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} isAdmin={isAdmin} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onReopen={() => { if (window.confirm('Reopen this case? All previous records and termination history are kept.')) reopen(sel); }} onClose={() => setSel(null)} />}
       {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} error={error} isPsych={isPsych} others={others} onSubmit={save} onClose={() => setForm(null)} />}
       {terminating && <TerminateModal child={terminating} onConfirm={terminate} onClose={() => setTerminating(null)} />}
     </div>
   );
 }
 
-function ChildDrawer({ child, canEdit, canTerminate, others = [], onEdit, onTerminate, onClose }) {
+function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [], onEdit, onTerminate, onReopen, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   const location = [child.barangay, child.municipality, child.province].filter(Boolean).join(', ') || child.address || '—';
+  const showReopen = isAdmin && child.status === 'inactive';
   const fields = [
     ['Gender', child.gender || '—'],
     ['Case Category (NACC)', child.case_category || '—'],
@@ -317,14 +330,16 @@ function ChildDrawer({ child, canEdit, canTerminate, others = [], onEdit, onTerm
               ))}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {child.status === 'inactive' && child.termination && (
-                <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
-                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Termination</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>{child.termination.reason_category}</div>
-                  <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: '4px 0 0', lineHeight: 1.5 }}>{child.termination.note}</p>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>
-                    {child.termination.date}{child.termination.terminated_by ? ` · by ${child.termination.terminated_by}` : ''}
-                  </div>
+              {child.status === 'inactive' && (child.terminations || []).length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="racco-eyebrow" style={{ fontSize: 10 }}>Termination history ({child.terminations.length})</div>
+                  {child.terminations.map((t, i) => (
+                    <div key={i} style={{ padding: '12px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>{t.reason_category}</div>
+                      <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: '4px 0 0', lineHeight: 1.5 }}>{t.note}</p>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>{t.date}{t.terminated_by ? ` · by ${t.terminated_by}` : ''}</div>
+                    </div>
+                  ))}
                 </div>
               )}
               {(child.instruments_used || []).length > 0 && (
@@ -350,10 +365,17 @@ function ChildDrawer({ child, canEdit, canTerminate, others = [], onEdit, onTerm
             </div>
           </div>
         </div>
-        {(canEdit || canTerminate) && (
-          <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-            {canEdit && <Button variant="secondary" onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>}
-            {canTerminate && <Button variant="danger" onClick={onTerminate} iconLeft={<Icon name="archive" size={16} />}>Terminate Case</Button>}
+        {(canEdit || canTerminate || showReopen) && (
+          <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {showReopen && (
+              <Button variant="primary" fullWidth onClick={onReopen} iconLeft={<Icon name="rotate-ccw" size={16} />}>Reopen Case</Button>
+            )}
+            {(canEdit || canTerminate) && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                {canEdit && <Button variant="secondary" onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>}
+                {canTerminate && <Button variant="danger" onClick={onTerminate} iconLeft={<Icon name="archive" size={16} />}>Terminate Case</Button>}
+              </div>
+            )}
           </div>
         )}
       </div>
