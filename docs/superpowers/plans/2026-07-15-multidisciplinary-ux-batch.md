@@ -27,6 +27,12 @@
 5. **Sidebar**: "Pre-Assessment Instruments" page stays at `/instruments` but is relabelled — Admin sees "Instruments & Agency Forms" (both tabs); Psychologist entry becomes "Agency Form Templates" (forms tab only — catalog management now lives inside wizard step 4).
 6. **Calendar**: `/schedule` route and page are kept as the "full screen" view; only the sidebar entry is removed. The dashboard mini calendar navigates there on click.
 7. **Reopen case** is Admin-only (`POST /children/<id>/reopen/`); termination history is preserved forever and displayed in full.
+8. **Name split (adviser #1)**: `Child.fullname` column is KEPT and auto-composed from new `first_name` / `middle_initial` / `last_name` fields on save — every existing `fullname`/`child_name` consumer keeps working; forms input the three parts. Existing rows are split best-effort (last token → last name).
+9. **Age constraint (adviser #2)** = 5–17 inclusive, validated from `birth_date` server-side; `birth_date`, name parts, gender, and case type become required on CREATE (edits stay partial-friendly).
+10. **Label renames (adviser #3)**: "Education Level" → **"Educational Placement"**, "Current Placement" → **"Place of Recovery"** — labels only, field names unchanged.
+11. **LIFO (adviser #4)** = Records list defaults to newest-first, with an A–Z toggle kept (the earlier adviser round asked for alphabetical — both available, LIFO default).
+12. **"Status has a function / add event" (adviser #13)**: appointment status actions (Completed / No-show / Cancel) ALREADY exist in the appointment detail modal — verified in code. The new part is calendar slot-click → prefilled booking form ("add event").
+13. **Consent embedding (adviser #9)** already exists (template document text renders in the wizard); the rework keeps it and adds the missing pieces: single flow (no On-file/Record-new toggle), consents table at the bottom, scan upload + in-app preview (the `ConsentRecord.scan` FileField already exists in the model, unused by the UI).
 
 ---
 
@@ -1076,9 +1082,629 @@ from django.conf import settings as django_settings
 
 ---
 
+### Task 12: Backend + frontend — split child name into First / M.I. / Last
+
+**Files:**
+- Modify: `backend/children/models.py`, `backend/children/serializers.py` (+ schema migration + data migration)
+- Modify: `frontend/src/pages/Children.jsx`
+- Test: append to `backend/children/tests/test_child_collab.py`
+
+**Interfaces:**
+- Produces: `Child.first_name`, `Child.middle_initial`, `Child.last_name` (API-writable); `fullname` becomes read-only in the API, auto-composed as `"First M. Last"` on save. Everything that reads `fullname`/`child_name` (reports, schedule, AI briefs) is untouched.
+
+- [ ] **Step 1: Failing tests** — append:
+
+```python
+class NameSplitTests(APITestCase):
+    def setUp(self):
+        self.staff = make_user("ns@t.ph", Role.STAFF)
+        self.client.force_authenticate(self.staff)
+
+    def test_create_composes_fullname(self):
+        r = self.client.post("/api/children/", {
+            "first_name": "Mika", "middle_initial": "R", "last_name": "Santos",
+            "birth_date": "2016-01-10", "gender": "Female", "case_type": "Foster Care",
+        }, format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["fullname"], "Mika R. Santos")
+
+    def test_name_parts_locked_after_create(self):
+        r = self.client.post("/api/children/", {
+            "first_name": "Ana", "last_name": "Cruz",
+            "birth_date": "2016-01-10", "gender": "Female", "case_type": "Foster Care",
+        }, format="json")
+        r2 = self.client.patch(f"/api/children/{r.data['id']}/",
+                               {"last_name": "Reyes"}, format="json")
+        self.assertEqual(r2.status_code, 400)
+```
+
+- [ ] **Step 2: Run to verify failure.**
+
+- [ ] **Step 3: Implement.** Model — before `fullname`:
+
+```python
+    # Name parts (adviser): fullname stays as the composed display column so
+    # every existing consumer keeps working.
+    first_name = models.CharField(max_length=100, blank=True)
+    middle_initial = models.CharField(max_length=5, blank=True)
+    last_name = models.CharField(max_length=100, blank=True)
+
+    def save(self, *args, **kwargs):
+        if self.first_name or self.last_name:
+            mi = f"{self.middle_initial.rstrip('.')}." if self.middle_initial else ""
+            self.fullname = " ".join(p for p in (self.first_name, mi, self.last_name) if p)
+        super().save(*args, **kwargs)
+```
+
+`makemigrations children`, then a data migration (`manage.py makemigrations children --empty -n split_existing_fullnames`):
+
+```python
+def split_names(apps, schema_editor):
+    Child = apps.get_model("children", "Child")
+    for c in Child.objects.all():
+        parts = (c.fullname or "").split()
+        if not parts:
+            continue
+        c.last_name = parts[-1] if len(parts) > 1 else ""
+        c.first_name = " ".join(parts[:-1]) if len(parts) > 1 else parts[0]
+        c.save(update_fields=["first_name", "last_name"])
+
+# operations = [migrations.RunPython(split_names, migrations.RunPython.noop)]
+```
+
+Serializer: add `"first_name", "middle_initial", "last_name"` to fields; move `"fullname"` into `read_only_fields`; extend the Task 1 `validate()` name-lock to the three parts:
+
+```python
+        if self.instance:
+            for f in ("first_name", "middle_initial", "last_name", "fullname"):
+                if f in attrs and attrs[f] != getattr(self.instance, f):
+                    raise serializers.ValidationError(
+                        {f: "The child's name cannot be changed after the record is created."})
+```
+
+(Replace the previous fullname-only check.)
+
+- [ ] **Step 4: Frontend.** `Children.jsx` `EMPTY` gains `first_name: '', middle_initial: '', last_name: ''` (drop `fullname` from EMPTY). Create-mode name block becomes:
+
+```jsx
+<div style={{ display: 'grid', gridTemplateColumns: '2fr 64px 2fr', gap: 10 }}>
+  <FormField label="First Name" required>
+    <Input value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
+  </FormField>
+  <FormField label="M.I.">
+    <Input value={form.middle_initial} maxLength={3} onChange={(e) => setForm({ ...form, middle_initial: e.target.value })} />
+  </FormField>
+  <FormField label="Last Name" required>
+    <Input value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
+  </FormField>
+</div>
+```
+
+Edit mode keeps the locked composed `form.fullname` display (unchanged). In `save()` also `delete payload.fullname;` on edit.
+
+- [ ] **Step 5:** Full backend suite green (composition must not break existing fullname-based tests); build; browser: add a child with parts, roster/drawer show "Mika R. Santos".
+
+- [ ] **Step 6: Commit** — `feat(records): first/MI/last name fields with composed fullname`
+
+---
+
+### Task 13: Input constraints (age 5–17, required *) + specific field labels
+
+**Files:**
+- Modify: `backend/children/serializers.py`
+- Modify: `frontend/src/pages/Children.jsx`
+- Test: append to `backend/children/tests/test_child_collab.py`
+
+**Interfaces:** Consumes Task 12 (name parts required on create).
+
+- [ ] **Step 1: Failing tests** — append (inside `NameSplitTests` or a new class with the same staff setup):
+
+```python
+    def _payload(self, **over):
+        base = {"first_name": "Leo", "last_name": "Diaz", "birth_date": "2016-01-10",
+                "gender": "Male", "case_type": "Foster Care"}
+        base.update(over)
+        return base
+
+    def test_age_below_5_rejected(self):
+        r = self.client.post("/api/children/", self._payload(birth_date="2024-01-01"), format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_age_above_17_rejected(self):
+        r = self.client.post("/api/children/", self._payload(birth_date="2000-01-01"), format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_required_fields_on_create(self):
+        r = self.client.post("/api/children/", {"first_name": "Solo"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        for f in ("last_name", "birth_date", "gender", "case_type"):
+            self.assertIn(f, r.data)
+```
+
+- [ ] **Step 2: Run to verify failure.**
+
+- [ ] **Step 3: Implement** in `ChildSerializer`:
+
+```python
+from django.utils import timezone
+
+    def validate_birth_date(self, value):
+        if value is None:
+            return value
+        today = timezone.localdate()
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+        if not (5 <= age <= 17):
+            raise serializers.ValidationError(
+                "The child must be between 5 and 17 years old.")
+        return value
+
+    def validate(self, attrs):
+        ...existing Task 1/12 checks...
+        if not self.instance:  # create: enforce the agency's required fields
+            missing = {f: "This field is required."
+                       for f in ("first_name", "last_name", "birth_date", "gender", "case_type")
+                       if not attrs.get(f)}
+            if missing:
+                raise serializers.ValidationError(missing)
+        return attrs
+```
+
+- [ ] **Step 4: Frontend.** In `ChildForm`:
+  - Add `required` to the FormFields for Birth Date, Gender, Case Type (First/Last already from Task 12) — `FormField`'s `required` prop renders the red `*` ([ui/index.jsx:258](frontend/src/ui/index.jsx)). All other fields stay optional (no `*`).
+  - Birth Date input gets `min`/`max` bounds: `max` = today minus 5 years, `min` = today minus 18 years (compute with `new Date()` + `toISOString().slice(0,10)`).
+  - Label renames everywhere in `Children.jsx` (form + drawer + the Task 6 Recommendation group): `"Education Level"` → `"Educational Placement"`, `"Current Placement"` → `"Place of Recovery"` (placeholder: "e.g. Foster family, residential facility" stays).
+  - Save button disabled until required fields are filled: `disabled={!form.id && !(form.first_name && form.last_name && form.birth_date && form.gender && form.case_type)}`.
+
+- [ ] **Step 5:** Suite green; build; browser: `*` markers show, 3-year-old birth date rejected with the message, labels updated.
+
+- [ ] **Step 6: Commit** — `feat(records): age 5-17 validation, required-field markers, specific labels`
+
+---
+
+### Task 14: Records list — Last-In-First-Out ordering
+
+**Files:**
+- Modify: `frontend/src/pages/Children.jsx`
+
+- [ ] **Step 1:** Add `const [sortMode, setSortMode] = useState('newest');` and replace the `.sort(...)` in `visible` with:
+
+```jsx
+.sort((a, b) => sortMode === 'newest'
+  ? b.id - a.id  // LIFO: newest record first
+  : a.fullname.localeCompare(b.fullname, undefined, { sensitivity: 'base' }));
+```
+
+Next to the status filter pills add a small toggle:
+
+```jsx
+<div style={{ display: 'inline-flex', gap: 4, background: 'var(--ink-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: 3 }}>
+  {[['newest', 'Newest first'], ['az', 'A–Z']].map(([k, label]) => (
+    <button key={k} onClick={() => setSortMode(k)} style={{ padding: '5px 12px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12, background: sortMode === k ? 'var(--blue-600)' : 'transparent', color: sortMode === k ? '#fff' : 'var(--text-muted)' }}>{label}</button>
+  ))}
+</div>
+```
+
+- [ ] **Step 2:** Build + browser: default order is newest record on top; toggle restores A–Z.
+
+- [ ] **Step 3: Commit** — `feat(records): LIFO default ordering with A-Z toggle`
+
+---
+
+### Task 15: Scheduling upgrades — weekday checkboxes, next-slot suggestions, slot-click booking
+
+**Files:**
+- Modify: `backend/scheduling/views.py` (AvailabilityBlockViewSet)
+- Modify: `frontend/src/pages/Schedule.jsx`, `frontend/src/pages/Children.jsx` (drawer)
+- Test: `backend/scheduling/tests/test_next_slots.py` (new; put beside existing scheduling tests — check the folder layout first)
+
+**Interfaces:**
+- Produces: `GET /api/availability/next-slots/?child=<id>` → `{"psychologist": "<name>", "slots": [{"date","weekday","start","end","remaining"}]}` (next 14 days, max 6 slots, capacity-aware). 400 if the child has no assigned psychologist.
+
+- [ ] **Step 1: Failing test**
+
+```python
+# backend/scheduling/tests/test_next_slots.py
+import datetime
+from django.utils import timezone
+from rest_framework.test import APITestCase
+from accounts.models import Role
+from children.tests.test_child_collab import make_user
+from children.models import Child
+from scheduling.models import AvailabilityBlock
+
+
+class NextSlotsTests(APITestCase):
+    def setUp(self):
+        self.staff = make_user("sl@t.ph", Role.STAFF)
+        self.psych = make_user("pl@t.ph", Role.PSYCHOLOGIST)
+        self.child = Child.objects.create(fullname="Slot Kid", assigned_psychologist=self.psych)
+        tomorrow = timezone.localdate() + datetime.timedelta(days=1)
+        AvailabilityBlock.objects.create(
+            psychologist=self.psych, weekday=tomorrow.weekday(),
+            start_time=datetime.time(9), end_time=datetime.time(12), capacity=2)
+        self.client.force_authenticate(self.staff)
+
+    def test_returns_upcoming_slots(self):
+        r = self.client.get(f"/api/availability/next-slots/?child={self.child.id}")
+        self.assertEqual(r.status_code, 200)
+        self.assertGreaterEqual(len(r.data["slots"]), 1)
+        self.assertEqual(r.data["slots"][0]["remaining"], 2)
+
+    def test_unassigned_child_400(self):
+        solo = Child.objects.create(fullname="No Psych")
+        r = self.client.get(f"/api/availability/next-slots/?child={solo.id}")
+        self.assertEqual(r.status_code, 400)
+```
+
+- [ ] **Step 2: Run to verify failure** (404 — no route).
+
+- [ ] **Step 3: Backend.** In `AvailabilityBlockViewSet`:
+
+```python
+import datetime
+from django.utils import timezone
+from rest_framework.decorators import action
+from children.models import Child
+from scheduling.models import Appointment
+
+    @action(detail=False, methods=["get"], url_path="next-slots")
+    def next_slots(self, request):
+        """Upcoming bookable windows for a child's assigned psychologist —
+        staff/psychologist see at a glance when the child can be counseled."""
+        child_id = request.query_params.get("child")
+        try:
+            child = Child.objects.get(pk=child_id)
+        except (Child.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "Unknown child."}, status=400)
+        psych = child.assigned_psychologist
+        if psych is None:
+            return Response({"detail": "This child has no assigned psychologist yet."}, status=400)
+        blocks = AvailabilityBlock.objects.filter(psychologist=psych, active=True)
+        today = timezone.localdate()
+        slots = []
+        for offset in range(0, 14):
+            day = today + datetime.timedelta(days=offset)
+            for b in blocks:
+                if b.date is not None and b.date != day:
+                    continue
+                if b.date is None and (b.weekday is None or b.weekday != day.weekday()):
+                    continue
+                booked = Appointment.objects.filter(
+                    psychologist=psych, status=Appointment.SCHEDULED,
+                    start__date=day, start__time__gte=b.start_time,
+                    start__time__lt=b.end_time).count()
+                remaining = b.capacity - booked
+                if remaining > 0:
+                    slots.append({
+                        "date": day.isoformat(),
+                        "weekday": day.strftime("%A"),
+                        "start": str(b.start_time)[:5], "end": str(b.end_time)[:5],
+                        "remaining": remaining,
+                    })
+            if len(slots) >= 6:
+                break
+        return Response({
+            "psychologist": getattr(psych, "fullname", "") or psych.get_username(),
+            "slots": slots[:6],
+        })
+```
+
+(Match `_validate_booking`'s counting semantics — read it first and mirror how it filters statuses/time windows so the suggestion never contradicts the booking validator.)
+
+- [ ] **Step 4: Weekday checkboxes (create mode).** `Schedule.jsx` — `openCreateBlock` seeds `weekdays: []` instead of `weekday: 0`; the weekly branch of the drawer becomes (create only — edit keeps the single-weekday select bound to `blockForm.weekday`):
+
+```jsx
+{blockForm.mode === 'weekly' && !blockForm.id ? (
+  <FormField label="Weekdays" required hint="Tick every day this window repeats — one block is created per day.">
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {WEEKDAYS.map((d, i) => {
+        const on = blockForm.weekdays.includes(i);
+        return (
+          <label key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 'var(--radius-pill)', border: `1px solid ${on ? 'var(--blue-500)' : 'var(--border)'}`, background: on ? 'var(--blue-50)' : 'var(--surface)', fontSize: 12.5, fontWeight: 700, color: on ? 'var(--blue-700)' : 'var(--text-body)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={on} style={{ accentColor: 'var(--blue-600)' }}
+              onChange={() => setBlockForm((f) => ({ ...f, weekdays: on ? f.weekdays.filter((x) => x !== i) : [...f.weekdays, i] }))} />
+            {d.slice(0, 3)}
+          </label>
+        );
+      })}
+    </div>
+  </FormField>
+) : blockForm.mode === 'weekly' ? (
+  /* existing single-weekday Select for edit */
+) : (
+  /* existing date input */
+)}
+```
+
+`saveBlock` create-path loops: `for (const wd of blockForm.weekdays) { await api.post('/availability/', { ...payload, weekday: wd, date: null }); }` (validate `blockForm.weekdays.length > 0` first, error "Tick at least one weekday."). Edit path unchanged.
+
+- [ ] **Step 5: Booking optimization.** In `Schedule.jsx`:
+  - When staff/admin picks a child, auto-select their assigned psychologist: in the Child `<Select>` onChange, also `const c = children.find((x) => String(x.id) === e.target.value); setBooking({ ...booking, child: e.target.value, psychologist: booking.psychologist || (c?.psychologist ?? '') });`
+  - Under the Date/Time grid, suggest slots: state `const [slotHints, setSlotHints] = useState(null);` — `useEffect` on `booking?.child`: `api.get(`/availability/next-slots/?child=${booking.child}`).then((r) => setSlotHints(r.data)).catch(() => setSlotHints(null));` Render:
+
+```jsx
+{slotHints?.slots?.length > 0 && (
+  <div>
+    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Next openings — {slotHints.psychologist}</div>
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {slotHints.slots.map((s, i) => (
+        <button key={i} type="button" onClick={() => setBooking({ ...booking, date: s.date, time: s.start })}
+          style={{ padding: '5px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--blue-300)', background: 'var(--blue-50)', color: 'var(--blue-700)', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 11.5, cursor: 'pointer' }}>
+          {s.weekday.slice(0, 3)} {s.date.slice(5)} · {s.start} ({s.remaining} open)
+        </button>
+      ))}
+    </div>
+  </div>
+)}
+```
+
+  - Slot-click "add event" (adviser #13): on the `<Calendar>` add `selectable onSelectSlot={(slot) => { if (!canBook) return; setError(''); setBooking({ child: '', psychologist: isPsych ? '' : '', date: format(slot.start, 'yyyy-MM-dd'), time: format(slot.start, 'HH:mm') === '00:00' ? '09:00' : format(slot.start, 'HH:mm'), purpose: 'session', duration: 60, notes: '' }); }}` (`format` is already imported from date-fns). Status buttons (Completed/No-show/Cancel) already exist in the detail modal — verify only.
+
+- [ ] **Step 6: Child drawer "when can they be counseled" (adviser #6).** In `Children.jsx` `ChildDrawer`, when `child.status === 'active' && child.psychologist_name`, fetch on mount `api.get(`/availability/next-slots/?child=${child.id}`)` into local state `slots`; render after the fields list:
+
+```jsx
+{slots?.slots?.length > 0 && (
+  <div>
+    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Next possible sessions — {slots.psychologist}</div>
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {slots.slots.map((s, i) => <Badge key={i} tone="success" size="sm" dot>{s.weekday.slice(0, 3)} {s.date.slice(5)} · {s.start}–{s.end}</Badge>)}
+    </div>
+  </div>
+)}
+```
+
+  - Adviser #7 (staff sees psychologist availability): ALREADY works — `/availability/` returns all blocks to staff/admin and Schedule.jsx lists them with psychologist names ("Psychologist availability" card); the dashboard shows `availability_today`. Verify in browser as staff, no code change expected.
+
+- [ ] **Step 7:** Backend suite green; build; live checks per steps 4–6.
+
+- [ ] **Step 8: Commit** — `feat(schedule): weekday multi-select, next-slot suggestions, slot-click booking`
+
+---
+
+### Task 16: Clickable notifications that navigate to their subject
+
+**Files:**
+- Modify: `frontend/src/components/Topbar.jsx`, `frontend/src/pages/Dashboard.jsx` (activity feed rows)
+
+- [ ] **Step 1:** In `Topbar.jsx` add beside `eventText` (module scope, exported):
+
+```jsx
+export function eventDestination(e, role) {
+  const type = (e.entity_type || '').toLowerCase();
+  if (type === 'child') return e.entity_id ? `/report/child/${e.entity_id}` : '/children';
+  if (type === 'guardian') return '/children';
+  if (type === 'appointment' || type === 'availabilityblock') return '/schedule';
+  if (['instrumentcatalog', 'instrument', 'agencyformtemplate', 'questionnaire'].includes(type)) return '/instruments';
+  if (e.category === 'user' || e.category === 'security' || type === 'user')
+    return role === 'Administrator' ? '/users' : '/';
+  return '/';
+}
+```
+
+Convert each notification row (the element rendering `eventText(n)` around line 158) from a `<span>`-in-`<div>` into a `<button>` with the row's existing styles plus `border: 'none', background: 'transparent', width: '100%', textAlign: 'left', cursor: 'pointer'` and `onClick={() => { setNotifOpen(false); navigate(eventDestination(n, role)); }}` — `role` is already derived in the component (check for `user?.role_name`; add it if not). Add a hover tint (`hoverTint('var(--blue-50)')` is already imported/used at line 165).
+
+- [ ] **Step 2:** Dashboard Activity Feed tile rows get the same behavior: `import { eventText, timeAgo, eventDestination } from '../components/Topbar';` and wrap each feed row in a clickable element navigating to `eventDestination(a, role)`.
+
+- [ ] **Step 3:** Build; browser: a "created child X" notification opens X's report page; a security/login event as admin opens `/users`; a psychologist clicking a user event lands on the dashboard, not a 403 page.
+
+- [ ] **Step 4: Commit** — `feat(notifications): click-through navigation to the notification's subject`
+
+---
+
+### Task 17: Consent step rework — single flow, consents table, scan upload + preview
+
+**Files:**
+- Modify: `backend/clinical/serializers.py` (ConsentRecord serializer), `backend/clinical/views.py` (Consent viewset)
+- Modify: `frontend/src/pages/PreAssessment.jsx` (`ConsentStep` rewritten)
+- Test: append to the clinical test file covering consents (grep `ConsentRecord` under `backend/clinical/tests/`)
+
+**Interfaces:**
+- Consumes: `ConsentRecord.scan` FileField (already in the model, unused).
+- Produces: consent create accepts multipart `scan`; serializer exposes `has_scan` + `scan_filename`; `GET /api/consents/<id>/download/` streams the scan (auth same as consent read).
+
+- [ ] **Step 1: Failing test**
+
+```python
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+    def test_consent_scan_upload_and_download(self):
+        # authenticate as the psychologist used by this test class
+        scan = SimpleUploadedFile("consent.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+        r = self.client.post("/api/consents/", {
+            "child": self.child.id, "signer_name": "Guardian G",
+            "status": "signed", "scan": scan,
+        }, format="multipart")
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.data["has_scan"])
+        d = self.client.get(f"/api/consents/{r.data['id']}/download/")
+        self.assertEqual(d.status_code, 200)
+```
+
+(Adapt `self.child`/auth to the existing consent test class's setUp. Uploaded files land in `media/consents/` — mirror how PsychologicalReport tests override storage/cleanup if they do.)
+
+- [ ] **Step 2: Run to verify failure.**
+
+- [ ] **Step 3: Backend.** Serializer — ensure fields include `"scan"` (write-only), plus:
+
+```python
+    has_scan = serializers.SerializerMethodField()
+    scan_filename = serializers.SerializerMethodField()
+
+    def get_has_scan(self, obj):
+        return bool(obj.scan)
+
+    def get_scan_filename(self, obj):
+        return obj.scan.name.rsplit("/", 1)[-1] if obj.scan else ""
+    # add "has_scan", "scan_filename" to Meta.fields; keep "scan" write_only:
+    # extra_kwargs = {"scan": {"write_only": True, "required": False}}
+```
+
+Viewset — add a download action modeled EXACTLY on `PsychologicalReport`'s authenticated download in `backend/clinical/views.py` (find `def download` there and copy its FileResponse + permission pattern):
+
+```python
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        consent = self.get_object()
+        if not consent.scan:
+            return Response({"detail": "No scan attached."}, status=404)
+        return FileResponse(consent.scan.open("rb"),
+                            as_attachment=False,
+                            filename=consent.scan.name.rsplit("/", 1)[-1])
+```
+
+(`as_attachment=False` so the browser/blob can render it inline for preview.)
+
+- [ ] **Step 4: Frontend — rewrite `ConsentStep`** in `PreAssessment.jsx` (replace the whole function):
+
+```jsx
+function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError }) {
+  const toast = useToast();
+  const [form, setForm] = useState({ template: '', signer_name: '', signer_relationship: '', status: 'signed', fileObj: null });
+  const [preview, setPreview] = useState(null); // { url, type, title }
+  const [busy, setBusy] = useState(false);
+  const tpl = templates.find((t) => String(t.id) === String(form.template));
+
+  const recordNew = async () => {
+    setError('');
+    if (!form.signer_name.trim()) { setError('Enter the signer’s name.'); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('child', child.id);
+      if (form.template) fd.append('template', form.template);
+      fd.append('signer_name', form.signer_name);
+      fd.append('signer_relationship', form.signer_relationship);
+      fd.append('status', form.status);
+      if (form.fileObj) fd.append('scan', form.fileObj);
+      const { data } = await api.post('/consents/', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await onRefresh();
+      if (data.status === 'signed') onLinked(data.id);
+      else setError('Consent recorded but not signed — a signed consent is required to complete the pre-assessment.');
+    } catch (err) {
+      setError(JSON.stringify(err.response?.data || 'Could not record consent.'));
+    } finally { setBusy(false); }
+  };
+
+  const openPreview = async (c) => {
+    try {
+      const res = await api.get(`/consents/${c.id}/download/`, { responseType: 'blob' });
+      setPreview({ url: URL.createObjectURL(res.data), type: res.data.type, title: c.scan_filename || c.signer_name });
+    } catch { toast.error('Could not load the file.'); }
+  };
+  const closePreview = () => { if (preview) URL.revokeObjectURL(preview.url); setPreview(null); };
+
+  const th = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' };
+  const td = { padding: '9px 12px', fontSize: 12.5, color: 'var(--text-body)' };
+
+  return (
+    <Card eyebrow="Step 2" title={`Consent — ${child.fullname}`} padding="22px">
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
+        The agency&apos;s consent document is embedded below — read it with the guardian, record the signed paper consent, and attach a scan if available.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <FormField label="Consent form template" hint="Your agency-authored consent form.">
+          <Select value={form.template} onChange={(e) => setForm({ ...form, template: e.target.value })}>
+            <option value="">— None / generic —</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.title} (v{t.version})</option>)}
+          </Select>
+        </FormField>
+        {tpl && (
+          <div style={{ marginBottom: 4 }}>
+            <FormBody body={tpl.body} />
+            <Button variant="ghost" onClick={() => printBlankForm(tpl)} iconLeft={<Icon name="printer" size={15} />}>Print blank form</Button>
+          </div>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <FormField label="Signer name" required><Input value={form.signer_name} onChange={(e) => setForm({ ...form, signer_name: e.target.value })} /></FormField>
+          <FormField label="Relationship to child"><Input value={form.signer_relationship} onChange={(e) => setForm({ ...form, signer_relationship: e.target.value })} placeholder="e.g. Foster mother" /></FormField>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <FormField label="Status" required>
+            <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+              <option value="signed">Signed</option>
+              <option value="pending">Pending</option>
+              <option value="declined">Declined</option>
+            </Select>
+          </FormField>
+          <FormField label="Scanned signed form" hint="Optional — PDF or photo of the signed paper.">
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setForm({ ...form, fileObj: e.target.files?.[0] || null })} style={{ fontSize: 13, fontFamily: 'var(--font-sans)' }} />
+          </FormField>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button variant="primary" onClick={recordNew} disabled={busy} iconLeft={<Icon name="save" size={16} />}>Record consent & continue</Button>
+        </div>
+      </div>
+
+      {/* All consents on file — tabular, at the bottom (adviser #11) */}
+      <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+        <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Consents on file ({consents.length})</div>
+        {consents.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>No consents recorded for {child.fullname} yet.</div>
+        ) : (
+          <div className="racco-scroll" style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
+              <thead><tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
+                {['Signer', 'Relationship', 'Template', 'Date', 'Status', 'File', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {consents.map((c) => (
+                  <tr key={c.id} style={{ borderBottom: '1px solid var(--ink-100)' }}>
+                    <td style={{ ...td, fontWeight: 700, color: 'var(--text-strong)' }}>{c.signer_name || '—'}</td>
+                    <td style={td}>{c.signer_relationship || '—'}</td>
+                    <td style={td}>{c.template_title || '—'}</td>
+                    <td style={td}>{c.date}</td>
+                    <td style={td}><Badge tone={c.status === 'signed' ? 'success' : c.status === 'declined' ? 'amber' : 'neutral'} size="sm" dot>{c.status}</Badge></td>
+                    <td style={td}>
+                      {c.has_scan
+                        ? <Button variant="ghost" onClick={() => openPreview(c)} iconLeft={<Icon name="eye" size={14} />}>Preview</Button>
+                        : <span style={{ color: 'var(--text-faint)' }}>—</span>}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      {c.status === 'signed' && (
+                        <Button variant="secondary" onClick={() => onLinked(c.id)} iconLeft={<Icon name="check" size={14} />}>Use this consent</Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Scan preview modal (adviser #12) */}
+      {preview && (
+        <div onClick={closePreview} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 90 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: '94%', height: '86vh', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, color: 'var(--text-strong)' }}>Consent scan — {preview.title}</span>
+              <button onClick={closePreview} aria-label="Close preview" style={iconBtn('var(--text-muted)')}><Icon name="x" size={16} /></button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, background: 'var(--ink-50)' }}>
+              {preview.type.startsWith('image/')
+                ? <img src={preview.url} alt="Consent scan" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                : <iframe title="Consent scan" src={preview.url} style={{ width: '100%', height: '100%', border: 'none' }} />}
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+```
+
+Imports needed at the top of PreAssessment.jsx: `iconBtn` from `'../ui'` and `useToast` is already imported (the step uses the page-level `toast` today — pass it in or call `useToast()` inside the component as shown). Check `ConsentRecordSerializer` exposes `template_title` (the old UI used it — it does).
+
+- [ ] **Step 5:** Backend suite green; build; browser: consent step shows the embedded document, no On-file/Record-new toggle, consents table at the bottom with Preview opening the scan inline (test with a photo AND a PDF), "Use this consent" advances the wizard.
+
+- [ ] **Step 6: Commit** — `feat(consent): unified consent step, on-file table, scan upload with in-app preview`
+
+---
+
 ## Self-Review (done at plan time)
 
-- **Spec coverage:** psychologist edits assigned child → T1/T3; multidisciplinary "Google-Docs-like" collab → T2/T3 (scoped decision #1); calendar off sidebar + dashboard mini widget + click-to-fullscreen → T10; bento no-scroll dashboard + per-module scrolling → T10; grouped result entries per child → T9; terminated records archived for admin + reuse when a child returns → T4/T5; Previous Custodian / Address / Recommendation → T6; instrument module inside pre-assessment step 4 → T7/T8; new instrument title lists (children + PAP) → T7; ethical-consideration check → answered in chat + hardening T11.
-- **Known ambiguities intentionally flagged:** decisions #1–#5 at the top; confirm with the user before executing if any look wrong.
-- **Type consistency:** `expected_updated_at` (write-only, ISO string) and `updated_at` (read-only) used consistently across T1–T3; `terminations` list shape identical in T4 backend and T5 frontend; `audience` values `child|adoptive_parent|both` identical in T7 model, seed, and T8 filters; `InstrumentFormDrawer` props match both call sites.
-- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T6, T9, T10, T11 independent. Do T10 last if the in-flight Sidebar change hasn't landed yet.
+- **Spec coverage (first batch):** psychologist edits assigned child → T1/T3; multidisciplinary "Google-Docs-like" collab → T2/T3 (scoped decision #1); calendar off sidebar + dashboard mini widget + click-to-fullscreen → T10; bento no-scroll dashboard + per-module scrolling → T10; grouped result entries per child → T9; terminated records archived for admin + reuse when a child returns → T4/T5; Previous Custodian / Address / Recommendation → T6; instrument module inside pre-assessment step 4 → T7/T8; new instrument title lists (children + PAP) → T7; ethical-consideration check → answered in chat + hardening T11.
+- **Spec coverage (adviser suggestions 1–13):** #1 name split → T12; #2 age 5–17 + required `*` → T13; #3 specific labels (Educational Placement, Place of Recovery) → T13; #4 LIFO records → T14; #5 weekday checkboxes → T15 step 4; #6 assigned child's next counseling slots → T15 steps 3/5/6; #7 staff sees psychologist availability → T15 step 6 (already works, verify); #8 clickable notifications → T16; #9 embedded readable consent → T17 (document text already renders; kept front-and-center); #10 remove Record New / On file toggle → T17; #11 consents in a bottom table → T17; #12 consent file preview → T17; #13 status function / add event → T15 step 5 (status actions already exist; slot-click booking added).
+- **Known ambiguities intentionally flagged:** decisions #1–#13 at the top; confirm with the user before executing if any look wrong.
+- **Type consistency:** `expected_updated_at` (write-only, ISO string) and `updated_at` (read-only) used consistently across T1–T3; `terminations` list shape identical in T4 backend and T5 frontend; `audience` values `child|adoptive_parent|both` identical in T7 model, seed, and T8 filters; `InstrumentFormDrawer` props match both call sites; `next-slots` response shape identical in T15 backend, Schedule hints, and Children drawer; `has_scan`/`scan_filename`/`download` consistent between T17 backend and ConsentStep; T12's name-lock `validate()` REPLACES T1's fullname-only check (implement T1's version first, extend it in T12).
+- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T12→T13 sequential (validation builds on name parts). `Children.jsx` is touched by T3, T5, T6, T12, T13, T14, T15-step-6 — run those serially, never in parallel subagents. `PreAssessment.jsx` is touched by T8 and T17 — serialize. `Schedule.jsx`/`Topbar.jsx`/`Dashboard.jsx` overlap across T10, T15, T16 — serialize T10→T15→T16. Do T10 last among dashboard tasks if the in-flight Sidebar change hasn't landed yet. Suggested overall order: T1, T2, T3, T4, T5, T6, T12, T13, T14, T7, T8, T17, T9, T10, T15, T16, T11.
