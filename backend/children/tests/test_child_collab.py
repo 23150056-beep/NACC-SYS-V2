@@ -48,6 +48,11 @@ class PsychologistEditTests(APITestCase):
         r = self.patch(self.staff, self.child, {"fullname": "Renamed"})
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_recommendation_field_roundtrip(self):
+        r = self.patch(self.staff, self.child, {"recommendation": "Refer for art therapy."})
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.data["recommendation"], "Refer for art therapy.")
+
 
 class ConcurrencyPresenceTests(APITestCase):
     def setUp(self):

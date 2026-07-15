@@ -40,7 +40,7 @@ class ChildSerializer(serializers.ModelSerializer):
             "province", "municipality", "barangay", "address",
             "case_type", "case_category", "surrendered_by", "status", "case_status", "assignee_sees_history",
             "photo", "referral_source", "referral_reason",
-            "education_level", "current_placement", "medical_notes",
+            "education_level", "current_placement", "medical_notes", "recommendation",
             "psychologist", "psychologist_name",
             "guardian", "guardian_name", "termination", "terminations",
             "pre_assessment_status", "instruments_used",

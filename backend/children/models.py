@@ -119,6 +119,9 @@ class Child(models.Model):
     education_level = models.CharField(max_length=100, blank=True)
     current_placement = models.CharField(max_length=150, blank=True)
     medical_notes = models.TextField(blank=True)
+    # Free-text recommendations + fields not part of the agency's intake
+    # interview live under the "Recommendation" section in the UI.
+    recommendation = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

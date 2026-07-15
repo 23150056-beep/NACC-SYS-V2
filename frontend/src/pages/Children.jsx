@@ -50,6 +50,7 @@ const EMPTY = {
   fullname: '', birth_date: '', gender: '', province: '', municipality: '', barangay: '',
   case_type: '', case_category: '', surrendered_by: '', psychologist: '', assignee_sees_history: true,
   referral_source: '', referral_reason: '', education_level: '', current_placement: '', medical_notes: '',
+  recommendation: '',
 };
 
 export default function Children() {
@@ -287,11 +288,8 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
     ['Gender', child.gender || '—'],
     ['Case Category (NACC)', child.case_category || '—'],
     ['Assigned Psychologist', child.psychologist_name || '—'],
-    ['Surrendered By', child.surrendered_by || '—'],
-    ['Location', location],
-    ['Referral Source', child.referral_source || '—'],
-    ['Education Level', child.education_level || '—'],
-    ['Current Placement', child.current_placement || '—'],
+    ['Previous Custodian', child.surrendered_by || '—'],
+    ['Address', location],
     ['Pre-Assessment', child.pre_assessment_status || 'Not yet'],
   ];
   return (
@@ -350,6 +348,17 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
                   </div>
                 </div>
               )}
+              <div>
+                <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Recommendation</div>
+                {child.recommendation && <p style={{ fontSize: 13, color: 'var(--text-body)', margin: '0 0 10px', lineHeight: 1.55 }}>{child.recommendation}</p>}
+                {[['Referral Source', child.referral_source], ['Education Level', child.education_level], ['Current Placement', child.current_placement]]
+                  .filter(([, v]) => v).map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 10, borderBottom: '1px solid var(--ink-100)', marginBottom: 10 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
+                      <span style={{ fontSize: 13.5, color: 'var(--text-strong)', fontWeight: 700, textAlign: 'right' }}>{v}</span>
+                    </div>
+                ))}
+              </div>
               {child.referral_reason && (
                 <div>
                   <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Referral reason</div>
@@ -526,7 +535,7 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
                   {CASE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                 </Select>
               </FormField>
-              <FormField label="Who Surrendered the Child">
+              <FormField label="Previous Custodian">
                 <Select value={form.surrendered_by || ''} onChange={(e) => setForm({ ...form, surrendered_by: e.target.value })}>
                   <option value="">— Select —</option>
                   {SURRENDERED_BY.map((s) => <option key={s}>{s}</option>)}
@@ -536,7 +545,8 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
           </section>
 
           <section>
-            <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Recommendation</div>
+            <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 4 }}>Recommendation</div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>Details beyond the agency&apos;s intake interview.</div>
             <div className="racco-case-grid">
               <FormField label="Referral Source" hint="Agency, LGU, or person who referred the child.">
                 <Input value={form.referral_source || ''} onChange={(e) => setForm({ ...form, referral_source: e.target.value })} />
@@ -552,6 +562,9 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
               </FormField>
               <FormField label="Medical Notes" style={{ gridColumn: '1 / -1' }}>
                 <textarea value={form.medical_notes || ''} onChange={(e) => setForm({ ...form, medical_notes: e.target.value })} rows={3} style={textarea} />
+              </FormField>
+              <FormField label="Recommendation" hint="Follow-ups, referrals, and notes outside the intake timeline." style={{ gridColumn: '1 / -1' }}>
+                <textarea value={form.recommendation || ''} onChange={(e) => setForm({ ...form, recommendation: e.target.value })} rows={3} style={textarea} />
               </FormField>
             </div>
           </section>
