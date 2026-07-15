@@ -17,7 +17,7 @@ class InstrumentCatalogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InstrumentCatalog
-        fields = ["id", "title", "publisher", "category", "age_range", "notes",
+        fields = ["id", "title", "publisher", "category", "audience", "age_range", "notes",
                   "owner", "owner_name", "active", "updated_at"]
 
 

@@ -41,18 +41,19 @@ class InstrumentCatalogTest(ClinicalBase):
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(InstrumentCatalog.objects.get().owner, self.psy)
 
-    def test_admin_create_requires_owner(self):
+    def test_admin_create_without_owner_is_shared(self):
         self._auth("a@racco1.gov.ph")
         resp = self.client.post("/api/instruments/", {"title": "WISC-V"}, format="json")
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("owner", resp.data)
+        self.assertEqual(resp.status_code, 201)
+        self.assertIsNone(InstrumentCatalog.objects.get(title="WISC-V").owner)
 
-    def test_psychologist_sees_only_own_entries(self):
+    def test_psychologist_sees_own_and_shared_entries(self):
         InstrumentCatalog.objects.create(title="Mine", owner=self.psy)
         InstrumentCatalog.objects.create(title="Theirs", owner=self.other)
+        InstrumentCatalog.objects.create(title="Shared", owner=None)
         self._auth("p@racco1.gov.ph")
         titles = [i["title"] for i in self.client.get("/api/instruments/").data]
-        self.assertEqual(titles, ["Mine"])
+        self.assertEqual(sorted(titles), ["Mine", "Shared"])
 
     def test_admin_sees_all_entries(self):
         InstrumentCatalog.objects.create(title="Mine", owner=self.psy)

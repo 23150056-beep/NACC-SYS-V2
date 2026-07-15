@@ -28,10 +28,16 @@ class InstrumentCatalog(models.Model):
         ("achievement", "Achievement"),
         ("other", "Other"),
     ]
+    AUDIENCE_CHOICES = [
+        ("child", "For children"),
+        ("adoptive_parent", "For prospective adoptive parents"),
+        ("both", "Both"),
+    ]
 
     title = models.CharField(max_length=200)
     publisher = models.CharField(max_length=200, blank=True)
     category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default="other")
+    audience = models.CharField(max_length=20, choices=AUDIENCE_CHOICES, default="child")
     age_range = models.CharField(max_length=50, blank=True)
     notes = models.TextField(blank=True)
     owner = models.ForeignKey(

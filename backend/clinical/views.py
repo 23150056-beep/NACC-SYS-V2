@@ -1,5 +1,5 @@
 from django.db.models import Q
-from rest_framework import viewsets, status, serializers
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -43,29 +43,36 @@ class InstrumentCatalogViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get("include_inactive") != "true":
             qs = qs.filter(active=True)
         if _role(self.request) == Role.PSYCHOLOGIST:
-            qs = qs.filter(owner=self.request.user)
+            qs = qs.filter(Q(owner=self.request.user) | Q(owner__isnull=True))
         return qs
 
     def _log(self, obj, action_name):
         log_activity(self.request.user, action_name, ActivityLog.RECORD,
                      entity_type="Instrument", entity_label=obj.title, entity_id=obj.id)
 
+    def _assert_can_write(self, obj):
+        # Shared (owner=None) catalog entries are admin-managed; psychologists
+        # may only modify instruments they own.
+        if _role(self.request) == Role.PSYCHOLOGIST and obj.owner_id != self.request.user.id:
+            raise PermissionDenied(
+                "Shared instruments are managed by the administrator.")
+
     def perform_create(self, serializer):
         if _role(self.request) == Role.PSYCHOLOGIST:
             obj = serializer.save(owner=self.request.user)
         else:
-            if not serializer.validated_data.get("owner"):
-                raise serializers.ValidationError(
-                    {"owner": "Select the psychologist who owns this instrument."})
-            obj = serializer.save()
+            # No owner selected means agency-wide shared instrument.
+            obj = serializer.save(owner=serializer.validated_data.get("owner"))
         self._log(obj, ActivityLog.CREATED)
 
     def perform_update(self, serializer):
+        self._assert_can_write(serializer.instance)
         self._log(serializer.save(), ActivityLog.UPDATED)
 
     @action(detail=True, methods=["post"])
     def deactivate(self, request, pk=None):
         obj = self.get_object()
+        self._assert_can_write(obj)
         obj.active = False
         obj.save(update_fields=["active", "updated_at"])
         self._log(obj, ActivityLog.ARCHIVED)
@@ -74,6 +81,7 @@ class InstrumentCatalogViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def activate(self, request, pk=None):
         obj = self.get_object()
+        self._assert_can_write(obj)
         obj.active = True
         obj.save(update_fields=["active", "updated_at"])
         return Response({"active": True}, status=status.HTTP_200_OK)
