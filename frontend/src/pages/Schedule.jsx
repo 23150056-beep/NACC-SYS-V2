@@ -34,6 +34,7 @@ export default function Schedule() {
   const [error, setError] = useState('');
   const [brief, setBrief] = useState(null);      // { draft, generated_at, job_id, childName }
   const [briefBusy, setBriefBusy] = useState(false);
+  const [slotHints, setSlotHints] = useState(null);
 
   const load = () => {
     api.get('/appointments/').then((r) => setAppointments(r.data)).catch(() => {});
@@ -43,6 +44,10 @@ export default function Schedule() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   useEffect(() => { api.post('/ai/prefetch-briefs/').catch(() => {}); }, []);
+  useEffect(() => {
+    if (!booking?.child) { setSlotHints(null); return; }
+    api.get(`/availability/next-slots/?child=${booking.child}`).then((r) => setSlotHints(r.data)).catch(() => setSlotHints(null));
+  }, [booking?.child]);
 
   const events = useMemo(() => appointments.map((a) => {
     const start = new Date(a.start);
@@ -86,7 +91,7 @@ export default function Schedule() {
 
   const openCreateBlock = () => {
     setError('');
-    setBlockForm({ mode: 'weekly', weekday: 0, date: '', start_time: '09:00', end_time: '12:00', capacity: 2, psychologist: '' });
+    setBlockForm({ mode: 'weekly', weekdays: [], date: '', start_time: '09:00', end_time: '12:00', capacity: 2, psychologist: '' });
   };
 
   const openEditBlock = (b) => {
@@ -111,17 +116,31 @@ export default function Schedule() {
       setError('Select which psychologist this availability belongs to.');
       return;
     }
-    const payload = {
-      weekday: blockForm.mode === 'weekly' ? Number(blockForm.weekday) : null,
-      date: blockForm.mode === 'date' ? blockForm.date : null,
+    if (!blockForm.id && blockForm.mode === 'weekly' && blockForm.weekdays.length === 0) {
+      setError('Tick at least one weekday.');
+      return;
+    }
+    const base = {
       start_time: blockForm.start_time, end_time: blockForm.end_time,
       capacity: Number(blockForm.capacity) || 1,
     };
     // Owner is only set on create — editing never reassigns whose calendar a block belongs to.
-    if (!isPsych && !blockForm.id) payload.psychologist = blockForm.psychologist;
+    if (!isPsych && !blockForm.id) base.psychologist = blockForm.psychologist;
     try {
-      if (blockForm.id) await api.patch(`/availability/${blockForm.id}/`, payload);
-      else await api.post('/availability/', payload);
+      if (blockForm.id) {
+        const payload = {
+          ...base,
+          weekday: blockForm.mode === 'weekly' ? Number(blockForm.weekday) : null,
+          date: blockForm.mode === 'date' ? blockForm.date : null,
+        };
+        await api.patch(`/availability/${blockForm.id}/`, payload);
+      } else if (blockForm.mode === 'weekly') {
+        for (const wd of blockForm.weekdays) {
+          await api.post('/availability/', { ...base, weekday: wd, date: null });
+        }
+      } else {
+        await api.post('/availability/', { ...base, weekday: null, date: blockForm.date });
+      }
       toast.success(blockForm.id ? 'Availability updated' : 'Availability added');
       setBlockForm(null); load();
     } catch (err) {
@@ -187,6 +206,17 @@ export default function Schedule() {
             popup
             eventPropGetter={eventStyleGetter}
             onSelectEvent={(ev) => setSel(ev.resource)}
+            selectable
+            onSelectSlot={(slot) => {
+              if (!canBook) return;
+              setError('');
+              const t = format(slot.start, 'HH:mm');
+              setBooking({
+                child: '', psychologist: isPsych ? '' : '',
+                date: format(slot.start, 'yyyy-MM-dd'), time: t === '00:00' ? '09:00' : t,
+                purpose: 'session', duration: 60, notes: '',
+              });
+            }}
             style={{ fontFamily: 'var(--font-sans)', fontSize: 13 }}
           />
         </div>
@@ -229,7 +259,11 @@ export default function Schedule() {
             <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
               {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{String(error)}</Alert>}
               <FormField label="Child" required>
-                <Select value={booking.child} onChange={(e) => setBooking({ ...booking, child: e.target.value })}>
+                <Select value={booking.child} onChange={(e) => {
+                  const childId = e.target.value;
+                  const c = children.find((x) => String(x.id) === childId);
+                  setBooking({ ...booking, child: childId, psychologist: booking.psychologist || (c?.psychologist ?? '') });
+                }}>
                   <option value="">— Select child —</option>
                   {children.map((c) => <option key={c.id} value={c.id}>{c.fullname}</option>)}
                 </Select>
@@ -250,6 +284,19 @@ export default function Schedule() {
                   <Input type="time" value={booking.time} onChange={(e) => setBooking({ ...booking, time: e.target.value })} />
                 </FormField>
               </div>
+              {slotHints?.slots?.length > 0 && (
+                <div>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Next openings — {slotHints.psychologist}</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {slotHints.slots.map((s, i) => (
+                      <button key={i} type="button" onClick={() => setBooking({ ...booking, date: s.date, time: s.start })}
+                        style={{ padding: '5px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--blue-300)', background: 'var(--blue-50)', color: 'var(--blue-700)', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 11.5, cursor: 'pointer' }}>
+                        {s.weekday.slice(0, 3)} {s.date.slice(5)} · {s.start} ({s.remaining} open)
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <FormField label="Purpose">
                   <Select value={booking.purpose} onChange={(e) => setBooking({ ...booking, purpose: e.target.value })}>
@@ -300,7 +347,22 @@ export default function Schedule() {
                   <option value="date">Single date</option>
                 </Select>
               </FormField>
-              {blockForm.mode === 'weekly' ? (
+              {blockForm.mode === 'weekly' && !blockForm.id ? (
+                <FormField label="Weekdays" required hint="Tick every day this window repeats — one block is created per day.">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {WEEKDAYS.map((d, i) => {
+                      const on = blockForm.weekdays.includes(i);
+                      return (
+                        <label key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 'var(--radius-pill)', border: `1px solid ${on ? 'var(--blue-500)' : 'var(--border)'}`, background: on ? 'var(--blue-50)' : 'var(--surface)', fontSize: 12.5, fontWeight: 700, color: on ? 'var(--blue-700)' : 'var(--text-body)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={on} style={{ accentColor: 'var(--blue-600)' }}
+                            onChange={() => setBlockForm((f) => ({ ...f, weekdays: on ? f.weekdays.filter((x) => x !== i) : [...f.weekdays, i] }))} />
+                          {d.slice(0, 3)}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </FormField>
+              ) : blockForm.mode === 'weekly' ? (
                 <FormField label="Weekday">
                   <Select value={blockForm.weekday} onChange={(e) => setBlockForm({ ...blockForm, weekday: e.target.value })}>
                     {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
