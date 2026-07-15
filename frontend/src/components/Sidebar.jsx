@@ -2,7 +2,6 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Icon, ROLE_META } from '../ui';
-import { INSTRUMENT_MANAGER_ROLES } from '../config/roles';
 
 // Role-gated navigation. Sections render only when they contain a visible item.
 const NAV = [
@@ -10,7 +9,11 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: 'layout-dashboard', roles: ['Administrator', 'Psychologist', 'Staff'], end: true },
   { section: 'Casework' },
   { to: '/children', label: 'Records', icon: 'users', roles: ['Administrator', 'Psychologist', 'Staff'] },
-  { to: '/instruments', label: 'Pre-Assessment Instruments', icon: 'clipboard-pen', roles: INSTRUMENT_MANAGER_ROLES },
+  // Same route, role-scoped label/description: admins get full catalog
+  // governance, psychologists only manage their agency form templates here
+  // (their instrument catalog lives inside the Pre-Assessment wizard, step 4).
+  { to: '/instruments', label: 'Instruments & Agency Forms', icon: 'clipboard-pen', roles: ['Administrator'] },
+  { to: '/instruments', label: 'Agency Form Templates', icon: 'file-text', roles: ['Psychologist'] },
   { section: 'Clinical' },
   { to: '/pre-assessment', label: 'Pre-Assessment', icon: 'clipboard-list', roles: ['Psychologist'] },
   { to: '/monitoring', label: 'Progress Monitoring', icon: 'activity', roles: ['Administrator', 'Psychologist', 'Staff'] },
