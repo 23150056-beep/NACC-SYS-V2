@@ -284,6 +284,7 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
   }, [onClose]);
   const location = [child.barangay, child.municipality, child.province].filter(Boolean).join(', ') || child.address || '—';
   const showReopen = isAdmin && child.status === 'inactive';
+  const hasRecommendationContent = child.recommendation || child.referral_source || child.education_level || child.current_placement;
   const fields = [
     ['Gender', child.gender || '—'],
     ['Case Category (NACC)', child.case_category || '—'],
@@ -348,17 +349,19 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
                   </div>
                 </div>
               )}
-              <div>
-                <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Recommendation</div>
-                {child.recommendation && <p style={{ fontSize: 13, color: 'var(--text-body)', margin: '0 0 10px', lineHeight: 1.55 }}>{child.recommendation}</p>}
-                {[['Referral Source', child.referral_source], ['Education Level', child.education_level], ['Current Placement', child.current_placement]]
-                  .filter(([, v]) => v).map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 10, borderBottom: '1px solid var(--ink-100)', marginBottom: 10 }}>
-                      <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
-                      <span style={{ fontSize: 13.5, color: 'var(--text-strong)', fontWeight: 700, textAlign: 'right' }}>{v}</span>
-                    </div>
-                ))}
-              </div>
+              {hasRecommendationContent && (
+                <div>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Recommendation</div>
+                  {child.recommendation && <p style={{ fontSize: 13, color: 'var(--text-body)', margin: '0 0 10px', lineHeight: 1.55 }}>{child.recommendation}</p>}
+                  {[['Referral Source', child.referral_source], ['Education Level', child.education_level], ['Current Placement', child.current_placement]]
+                    .filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 10, borderBottom: '1px solid var(--ink-100)', marginBottom: 10 }}>
+                        <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
+                        <span style={{ fontSize: 13.5, color: 'var(--text-strong)', fontWeight: 700, textAlign: 'right' }}>{v}</span>
+                      </div>
+                  ))}
+                </div>
+              )}
               {child.referral_reason && (
                 <div>
                   <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Referral reason</div>
