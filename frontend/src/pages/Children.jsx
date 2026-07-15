@@ -7,6 +7,21 @@ import { Card, Button, Badge, Input, Select, FormField, Avatar, Alert, EmptyStat
 import { useToast } from '../context/ToastContext';
 import { CASE_TYPES, CASE_CATEGORIES, SURRENDERED_BY, TERMINATION_REASONS, PROVINCES, MUNICIPALITIES, BARANGAYS } from '../config/caseData';
 
+// Live "who else has this record open" chip — polls the presence heartbeat endpoint.
+function usePresence(childId) {
+  const [others, setOthers] = useState([]);
+  useEffect(() => {
+    if (!childId) { setOthers([]); return; }
+    let alive = true;
+    const beat = () => api.post(`/children/${childId}/presence/`)
+      .then((r) => alive && setOthers(r.data.others || [])).catch(() => {});
+    beat();
+    const t = setInterval(beat, 10000);
+    return () => { alive = false; clearInterval(t); };
+  }, [childId]);
+  return others;
+}
+
 function ageFrom(birth) {
   if (!birth) return null;
   const d = new Date(birth);
@@ -53,6 +68,7 @@ export default function Children() {
   const [form, setForm] = useState(null); // add/edit drawer
   const [terminating, setTerminating] = useState(null); // terminate modal record
   const [error, setError] = useState('');
+  const others = usePresence(form?.id || sel?.id);
 
   const load = () => {
     // Include inactive (terminated) cases — the V2 roster shows them with chips.
@@ -90,6 +106,8 @@ export default function Children() {
 
   const canTerminate = (c) => c.status === 'active'
     && (isAdmin || (isPsych && String(c.psychologist) === String(user?.id)));
+  const canEditRecord = (c) => canManage
+    || (isPsych && c.status === 'active' && String(c.psychologist) === String(user?.id));
 
   const openCreate = () => { setError(''); setForm({ ...EMPTY }); };
   const openEdit = (c) => { setError(''); setForm({ ...EMPTY, ...c, psychologist: c.psychologist || '', _origPsychologist: c.psychologist || '' }); };
@@ -97,10 +115,11 @@ export default function Children() {
   const save = async (e) => {
     e.preventDefault();
     setError('');
-    const payload = { ...form };
+    const payload = { ...form, expected_updated_at: form.updated_at };
     delete payload.age; delete payload.group; delete payload.ref;
     delete payload.psychologist_name; delete payload.guardian_name;
     delete payload._origPsychologist; delete payload.termination; delete payload.photo;
+    delete payload.updated_at; delete payload._conflict;
     if (!payload.psychologist) payload.psychologist = null;
     if (!payload.birth_date) delete payload.birth_date;
     try {
@@ -111,6 +130,13 @@ export default function Children() {
       load();
       refreshActivity();
     } catch (err) {
+      if (err.response?.status === 409) {
+        const fresh = err.response.data.current;
+        setError('');
+        setForm((f) => ({ ...f, _conflict: fresh }));
+        toast.error('Someone updated this record while you were editing.');
+        return;
+      }
       setError(JSON.stringify(err.response?.data || 'Save failed'));
       toast.error('Could not save the record. Please try again.');
     }
@@ -217,7 +243,7 @@ export default function Children() {
                     {(canManage || isPsych) && (
                       <td style={{ padding: '11px 16px' }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          {canManage && <button title="Edit record" aria-label={`Edit ${c.fullname}`} onClick={() => openEdit(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>}
+                          {canEditRecord(c) && <button title="Edit record" aria-label={`Edit ${c.fullname}`} onClick={() => openEdit(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>}
                           {canTerminate(c) && <button title="Terminate / archive case" aria-label={`Terminate ${c.fullname}'s case`} onClick={() => setTerminating(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="archive" size={15} /></button>}
                         </div>
                       </td>
@@ -230,14 +256,14 @@ export default function Children() {
         )}
       </Card>
 
-      {sel && <ChildDrawer child={sel} canManage={canManage} canTerminate={canTerminate(sel)} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onClose={() => setSel(null)} />}
-      {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} error={error} onSubmit={save} onClose={() => setForm(null)} />}
+      {sel && <ChildDrawer child={sel} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onClose={() => setSel(null)} />}
+      {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} error={error} isPsych={isPsych} others={others} onSubmit={save} onClose={() => setForm(null)} />}
       {terminating && <TerminateModal child={terminating} onConfirm={terminate} onClose={() => setTerminating(null)} />}
     </div>
   );
 }
 
-function ChildDrawer({ child, canManage, canTerminate, onEdit, onTerminate, onClose }) {
+function ChildDrawer({ child, canEdit, canTerminate, others = [], onEdit, onTerminate, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -270,6 +296,12 @@ function ChildDrawer({ child, canManage, canTerminate, onEdit, onTerminate, onCl
           </div>
           <button onClick={onClose} aria-label="Close panel" title="Close" {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="x" size={17} /></button>
         </div>
+        {others.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 20px', background: 'var(--blue-50)', borderBottom: '1px solid var(--blue-100)' }}>
+            <Icon name="users" size={14} style={{ color: 'var(--blue-600)' }} />
+            {others.map((o, i) => <Badge key={i} tone="brand" size="sm" dot>{o.name} ({o.role}) is here</Badge>)}
+          </div>
+        )}
         <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><StatusChip child={child} size="md" /></div>
           {child.status === 'inactive' && child.termination && (
@@ -309,9 +341,9 @@ function ChildDrawer({ child, canManage, canTerminate, onEdit, onTerminate, onCl
             </div>
           )}
         </div>
-        {(canManage || canTerminate) && (
+        {(canEdit || canTerminate) && (
           <div style={{ padding: 16, borderTop: '1px solid var(--border)', display: 'flex', gap: 10 }}>
-            {canManage && <Button variant="secondary" fullWidth onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>}
+            {canEdit && <Button variant="secondary" fullWidth onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>}
             {canTerminate && <Button variant="danger" fullWidth onClick={onTerminate} iconLeft={<Icon name="archive" size={16} />}>Terminate Case</Button>}
           </div>
         )}
@@ -356,7 +388,7 @@ function TerminateModal({ child, onConfirm, onClose }) {
   );
 }
 
-function ChildForm({ form, setForm, psychologists, error, onSubmit, onClose }) {
+function ChildForm({ form, setForm, psychologists, error, isPsych = false, others = [], onSubmit, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -375,8 +407,24 @@ function ChildForm({ form, setForm, psychologists, error, onSubmit, onClose }) {
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>{isEdit ? 'Edit Record' : 'Add Record'}</div>
           <button type="button" onClick={onClose} aria-label="Close" {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="x" size={17} /></button>
         </div>
+        {others.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 20px', background: 'var(--blue-50)', borderBottom: '1px solid var(--blue-100)' }}>
+            <Icon name="users" size={14} style={{ color: 'var(--blue-600)' }} />
+            {others.map((o, i) => <Badge key={i} tone="brand" size="sm" dot>{o.name} ({o.role}) is here</Badge>)}
+          </div>
+        )}
         <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{error}</Alert>}
+          {form._conflict && (
+            <Alert tone="warning" icon={<Icon name="alert-triangle" size={18} />} title="This record was just changed by a teammate.">
+              Load their latest version, then re-apply your edits.
+              <div style={{ marginTop: 10 }}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setForm({ ...EMPTY, ...form._conflict, psychologist: form._conflict.psychologist || '', _origPsychologist: form._conflict.psychologist || '' })}>
+                  Load latest
+                </Button>
+              </div>
+            </Alert>
+          )}
           {/* Child name is not editable once a record exists (adviser). */}
           {isEdit ? (
             <div>
@@ -454,19 +502,30 @@ function ChildForm({ form, setForm, psychologists, error, onSubmit, onClose }) {
             <textarea value={form.medical_notes || ''} onChange={(e) => setForm({ ...form, medical_notes: e.target.value })} rows={3} style={textarea} />
           </FormField>
 
-          <FormField label="Assign Psychologist">
-            <Select value={form.psychologist || ''} onChange={(e) => setForm({ ...form, psychologist: e.target.value })}>
-              <option value="">— Unassigned —</option>
-              {psychologists.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.caseload} case{p.caseload === 1 ? '' : 's'}</option>)}
-            </Select>
-          </FormField>
-          {isEdit && form.psychologist && String(form.psychologist) !== String(form._origPsychologist) && (
-            <div style={{ padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)' }}>
-              <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12.5, color: 'var(--text-strong)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.assignee_sees_history !== false} onChange={(e) => setForm({ ...form, assignee_sees_history: e.target.checked })} style={{ marginTop: 2, accentColor: 'var(--blue-600)' }} />
-                <span>Carry this child&apos;s session history to the new psychologist (they&apos;ll see prior records). Uncheck to give them a fresh start.</span>
-              </label>
-            </div>
+          {isPsych ? (
+            <FormField label="Assigned Psychologist" hint="Reassignment is done by admin/staff.">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)', color: 'var(--text-strong)', fontWeight: 700, fontSize: 14 }}>
+                {form.psychologist_name || '—'}
+                <Icon name="lock" size={13} style={{ color: 'var(--text-faint)', marginLeft: 'auto' }} />
+              </div>
+            </FormField>
+          ) : (
+            <>
+              <FormField label="Assign Psychologist">
+                <Select value={form.psychologist || ''} onChange={(e) => setForm({ ...form, psychologist: e.target.value })}>
+                  <option value="">— Unassigned —</option>
+                  {psychologists.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.caseload} case{p.caseload === 1 ? '' : 's'}</option>)}
+                </Select>
+              </FormField>
+              {isEdit && form.psychologist && String(form.psychologist) !== String(form._origPsychologist) && (
+                <div style={{ padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)' }}>
+                  <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12.5, color: 'var(--text-strong)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={form.assignee_sees_history !== false} onChange={(e) => setForm({ ...form, assignee_sees_history: e.target.checked })} style={{ marginTop: 2, accentColor: 'var(--blue-600)' }} />
+                    <span>Carry this child&apos;s session history to the new psychologist (they&apos;ll see prior records). Uncheck to give them a fresh start.</span>
+                  </label>
+                </div>
+              )}
+            </>
           )}
         </div>
         <div style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
