@@ -47,7 +47,8 @@ function StatusChip({ child, size = 'sm' }) {
 }
 
 const EMPTY = {
-  fullname: '', birth_date: '', gender: '', province: '', municipality: '', barangay: '',
+  first_name: '', middle_initial: '', last_name: '',
+  birth_date: '', gender: '', province: '', municipality: '', barangay: '',
   case_type: '', case_category: '', surrendered_by: '', psychologist: '', assignee_sees_history: true,
   referral_source: '', referral_reason: '', education_level: '', current_placement: '', medical_notes: '',
   recommendation: '',
@@ -123,6 +124,7 @@ export default function Children() {
     delete payload.updated_at; delete payload._conflict;
     if (!payload.psychologist) payload.psychologist = null;
     if (!payload.birth_date) delete payload.birth_date;
+    if (form.id) delete payload.fullname;
     try {
       if (form.id) await api.put(`/children/${form.id}/`, payload);
       else await api.post('/children/', payload);
@@ -484,9 +486,17 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
                   <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 5 }}>The child&apos;s name cannot be changed after the record is created.</div>
                 </div>
               ) : (
-                <FormField label="Full Name" required style={{ gridColumn: '1 / -1' }}>
-                  <Input value={form.fullname} onChange={(e) => setForm({ ...form, fullname: e.target.value })} required />
-                </FormField>
+                <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '2fr 64px 2fr', gap: 10 }}>
+                  <FormField label="First Name" required>
+                    <Input value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
+                  </FormField>
+                  <FormField label="M.I.">
+                    <Input value={form.middle_initial} maxLength={3} onChange={(e) => setForm({ ...form, middle_initial: e.target.value })} />
+                  </FormField>
+                  <FormField label="Last Name" required>
+                    <Input value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
+                  </FormField>
+                </div>
               )}
               <FormField label="Birth Date">
                 <Input type="date" value={form.birth_date || ''} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
