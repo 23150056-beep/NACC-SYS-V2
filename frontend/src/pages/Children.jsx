@@ -177,6 +177,11 @@ export default function Children() {
     }
   };
 
+  // Duplicate-check warning shortcuts (Add Record form): reuse the existing
+  // reopen() for archived matches, or just open the active match's drawer.
+  const onDupReopen = async (m) => { await reopen({ id: m.id, fullname: m.fullname }); setForm(null); };
+  const onDupOpenExisting = (m) => { setForm(null); const c = rows.find((r) => r.id === m.id); if (c) setSel(c); };
+
   return (
     <div style={{ ...PAGE, position: 'relative' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -285,7 +290,7 @@ export default function Children() {
       </Card>
 
       {sel && <ChildDrawer child={sel} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} isAdmin={isAdmin} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onReopen={() => { if (window.confirm('Reopen this case? All previous records and termination history are kept.')) reopen(sel); }} onClose={() => setSel(null)} />}
-      {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} blocks={blocks} error={error} isPsych={isPsych} others={others} onSubmit={save} onClose={() => setForm(null)} />}
+      {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} blocks={blocks} error={error} isPsych={isPsych} isAdmin={isAdmin} others={others} onSubmit={save} onClose={() => setForm(null)} onReopen={onDupReopen} onOpenExisting={onDupOpenExisting} />}
       {terminating && <TerminateModal child={terminating} onConfirm={terminate} onClose={() => setTerminating(null)} />}
     </div>
   );
@@ -446,13 +451,25 @@ function TerminateModal({ child, onConfirm, onClose }) {
   );
 }
 
-function ChildForm({ form, setForm, psychologists, blocks = [], error, isPsych = false, others = [], onSubmit, onClose }) {
+function ChildForm({ form, setForm, psychologists, blocks = [], error, isPsych = false, isAdmin = false, others = [], onSubmit, onClose, onReopen, onOpenExisting }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   const isEdit = !!form.id;
+  // Duplicate/returning-child detection (create mode only): debounce-check
+  // while typing so intake staff can reopen an archived record instead of
+  // accidentally creating a second one.
+  const [dupes, setDupes] = useState([]);
+  useEffect(() => {
+    if (form.id || !form.last_name?.trim() || !(form.first_name?.trim() || form.birth_date)) { setDupes([]); return; }
+    const t = setTimeout(() => {
+      const p = new URLSearchParams({ first_name: form.first_name || '', last_name: form.last_name, birth_date: form.birth_date || '' });
+      api.get(`/children/check-duplicate/?${p}`).then((r) => setDupes(r.data.matches || [])).catch(() => setDupes([]));
+    }, 600);
+    return () => clearTimeout(t);
+  }, [form.first_name, form.last_name, form.birth_date, form.id]);
   // Availability-comparison panel helpers (Task 18) — matches AvailabilityBlock 0=Monday.
   const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const availFor = (pid) => blocks.filter((b) => String(b.psychologist) === String(pid));
@@ -521,6 +538,26 @@ function ChildForm({ form, setForm, psychologists, blocks = [], error, isPsych =
                     <Input value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
                   </FormField>
                 </div>
+              )}
+              {!isEdit && dupes.length > 0 && (
+                <Alert tone="warning" icon={<Icon name="alert-triangle" size={18} />} title="A similar record already exists" style={{ gridColumn: '1 / -1' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                    {dupes.map((m) => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: 13 }}>{m.fullname}</strong>
+                        <Badge tone={m.status === 'inactive' ? 'neutral' : 'success'} size="sm" dot>
+                          {m.status === 'inactive' ? 'Archived (Terminated)' : 'Active'}
+                        </Badge>
+                        {m.birth_date && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>b. {m.birth_date}</span>}
+                        {m.status === 'inactive'
+                          ? (isAdmin
+                              ? <Button variant="secondary" onClick={() => onReopen(m)} iconLeft={<Icon name="rotate-ccw" size={14} />}>Reopen this record instead</Button>
+                              : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ask an administrator to reopen this archived record instead of creating a new one.</span>)
+                          : <Button variant="secondary" onClick={() => onOpenExisting(m)} iconLeft={<Icon name="eye" size={14} />}>Open existing record</Button>}
+                      </div>
+                    ))}
+                  </div>
+                </Alert>
               )}
               <FormField label="Birth Date" required={!isEdit}>
                 <Input type="date" value={form.birth_date || ''} min={!isEdit ? minBirthDate : undefined} max={!isEdit ? maxBirthDate : undefined} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} required={!isEdit} />
