@@ -63,6 +63,7 @@ export default function Children() {
   const isPsych = user?.role_name === 'Psychologist';
   const [children, setChildren] = useState([]);
   const [psychologists, setPsychologists] = useState([]);
+  const [blocks, setBlocks] = useState([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const q = searchParams.get('q') || '';
   const [status, setStatus] = useState('active');
@@ -78,6 +79,8 @@ export default function Children() {
     api.get('/children/?include_archived=true').then((r) => setChildren(r.data));
     // Active psychologists + current caseload (admin/staff endpoint — also lets Staff assign).
     api.get('/psychologists/').then((r) => setPsychologists(r.data)).catch(() => {});
+    // Availability blocks power the assignment-time comparison panel — admin/staff only.
+    if (canManage) api.get('/availability/').then((r) => setBlocks(r.data)).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
@@ -282,7 +285,7 @@ export default function Children() {
       </Card>
 
       {sel && <ChildDrawer child={sel} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} isAdmin={isAdmin} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onReopen={() => { if (window.confirm('Reopen this case? All previous records and termination history are kept.')) reopen(sel); }} onClose={() => setSel(null)} />}
-      {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} error={error} isPsych={isPsych} others={others} onSubmit={save} onClose={() => setForm(null)} />}
+      {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} blocks={blocks} error={error} isPsych={isPsych} others={others} onSubmit={save} onClose={() => setForm(null)} />}
       {terminating && <TerminateModal child={terminating} onConfirm={terminate} onClose={() => setTerminating(null)} />}
     </div>
   );
@@ -443,13 +446,17 @@ function TerminateModal({ child, onConfirm, onClose }) {
   );
 }
 
-function ChildForm({ form, setForm, psychologists, error, isPsych = false, others = [], onSubmit, onClose }) {
+function ChildForm({ form, setForm, psychologists, blocks = [], error, isPsych = false, others = [], onSubmit, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   const isEdit = !!form.id;
+  // Availability-comparison panel helpers (Task 18) — matches AvailabilityBlock 0=Monday.
+  const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const availFor = (pid) => blocks.filter((b) => String(b.psychologist) === String(pid));
+  const blockLabel = (b) => `${b.date || DAY_ABBR[b.weekday]} ${String(b.start_time).slice(0, 5)}–${String(b.end_time).slice(0, 5)}`;
   // Cascading location pickers; clear children when a parent changes.
   const munis = MUNICIPALITIES[form.province] || [];
   const brgys = BARANGAYS[form.municipality] || [];
@@ -616,6 +623,35 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
                     {psychologists.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.caseload} case{p.caseload === 1 ? '' : 's'}</option>)}
                   </Select>
                 </FormField>
+                {psychologists.length > 0 && (
+                  <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12, background: 'var(--ink-50)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div className="racco-eyebrow" style={{ fontSize: 10 }}>Availability — check before you assign</div>
+                    {psychologists.map((p) => {
+                      const av = availFor(p.id);
+                      const on = String(form.psychologist) === String(p.id);
+                      return (
+                        <button type="button" key={p.id}
+                          onClick={() => setForm({ ...form, psychologist: String(p.id) })}
+                          aria-pressed={on}
+                          style={{ textAlign: 'left', padding: '9px 11px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)', border: `1px solid ${on ? 'var(--blue-500)' : 'var(--border)'}`, background: on ? 'var(--blue-50)' : 'var(--surface)', transition: 'var(--transition-base)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13, color: on ? 'var(--blue-700)' : 'var(--text-strong)' }}>{p.name}</span>
+                            <Badge tone={p.caseload >= 5 ? 'amber' : 'neutral'} size="sm">{p.caseload} case{p.caseload === 1 ? '' : 's'}</Badge>
+                          </div>
+                          {av.length === 0 ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--amber-600)', fontWeight: 600 }}>
+                              <Icon name="alert-triangle" size={12} /> No availability set — sessions can&apos;t be booked yet
+                            </span>
+                          ) : (
+                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                              {av.map((b) => <Badge key={b.id} tone="success" size="sm">{blockLabel(b)}</Badge>)}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 {isEdit && form.psychologist && String(form.psychologist) !== String(form._origPsychologist) && (
                   <div style={{ marginTop: 10, padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)' }}>
                     <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12.5, color: 'var(--text-strong)', cursor: 'pointer' }}>
