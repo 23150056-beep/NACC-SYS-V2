@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.utils import timezone
 from rest_framework import viewsets, status
@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from accounts.models import Role
 from activity.models import ActivityLog
 from activity.services import log_activity
+from children.models import Child
 from scheduling.models import AvailabilityBlock, Appointment
 from scheduling.serializers import AvailabilityBlockSerializer, AppointmentSerializer
 
@@ -60,6 +61,53 @@ class AvailabilityBlockViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         self._assert_can_write(instance.psychologist_id)
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="next-slots")
+    def next_slots(self, request):
+        """Upcoming bookable windows for a child's assigned psychologist —
+        staff/psychologist see at a glance when the child can be counseled.
+        Capacity counting mirrors AppointmentViewSet._validate_booking: every
+        non-cancelled appointment inside the block's time window occupies a
+        slot, so this never contradicts what the booking endpoint accepts."""
+        child_id = request.query_params.get("child")
+        try:
+            child = Child.objects.get(pk=child_id)
+        except (Child.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "Unknown child."}, status=400)
+        psych = child.assigned_psychologist
+        if psych is None:
+            return Response({"detail": "This child has no assigned psychologist yet."}, status=400)
+        blocks = AvailabilityBlock.objects.filter(psychologist=psych, active=True)
+        today = timezone.localdate()
+        slots = []
+        for offset in range(0, 14):
+            day = today + timedelta(days=offset)
+            day_start = timezone.make_aware(datetime.combine(day, time.min))
+            for b in blocks:
+                if b.date is not None and b.date != day:
+                    continue
+                if b.date is None and (b.weekday is None or b.weekday != day.weekday()):
+                    continue
+                taken = (Appointment.objects
+                         .filter(psychologist=psych,
+                                 start__gte=day_start, start__lt=day_start + timedelta(days=1))
+                         .exclude(status=Appointment.CANCELLED)
+                         .filter(start__time__gte=b.start_time, start__time__lt=b.end_time)
+                         .count())
+                remaining = b.capacity - taken
+                if remaining > 0:
+                    slots.append({
+                        "date": day.isoformat(),
+                        "weekday": day.strftime("%A"),
+                        "start": str(b.start_time)[:5], "end": str(b.end_time)[:5],
+                        "remaining": remaining,
+                    })
+            if len(slots) >= 6:
+                break
+        return Response({
+            "psychologist": getattr(psych, "fullname", "") or psych.get_username(),
+            "slots": slots[:6],
+        })
 
 
 class AppointmentViewSet(viewsets.ModelViewSet):
