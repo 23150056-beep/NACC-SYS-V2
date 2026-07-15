@@ -61,15 +61,16 @@ class ChildViewSet(_ArchivableViewSet):
         # Terminate/advance have their own rule (admin OR the child's assigned
         # psychologist), enforced in the action body - RecordsAccess would
         # block psychologists.
-        if self.action in ("terminate", "advance_status", "presence"):
+        if self.action in ("terminate", "advance_status", "presence", "reopen"):
             return [IsAuthenticated()]
         return super().get_permissions()
 
     def get_queryset(self):
         # Inactive (terminated) cases stay reachable by id - the profile view
         # shows the termination details, and terminate itself must be able to
-        # report "already inactive" rather than 404.
-        if self.action in ("retrieve", "terminate"):
+        # report "already inactive" rather than 404. Reopen also needs access
+        # to inactive children by id.
+        if self.action in ("retrieve", "terminate", "reopen"):
             qs = self.model.objects.all().order_by("fullname")
         else:
             qs = super().get_queryset()
@@ -132,7 +133,7 @@ class ChildViewSet(_ArchivableViewSet):
             return Response({"detail": "Only the assigned psychologist or an administrator can update the case status."},
                             status=status.HTTP_403_FORBIDDEN)
         if child.status == Child.INACTIVE:
-            return Response({"detail": "This case is terminated; reactivation is not supported."},
+            return Response({"detail": "This case is terminated; an administrator can reopen it from the child's record."},
                             status=status.HTTP_400_BAD_REQUEST)
         new_status = request.data.get("case_status")
         if new_status not in (Child.STAGE_PRE_ASSESSMENT, Child.STAGE_COUNSELING):
@@ -180,3 +181,21 @@ class ChildViewSet(_ArchivableViewSet):
                 "note": record.note,
             },
         }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        """Admin-only: a terminated child returned to the clinic. Reactivate
+        the case on top of the archived record — history is retained."""
+        child = self.get_object()
+        role = getattr(getattr(request.user, "role", None), "role_name", None)
+        if role != Role.ADMINISTRATOR:
+            return Response({"detail": "Only an administrator can reopen a terminated case."},
+                            status=status.HTTP_403_FORBIDDEN)
+        if child.status != Child.INACTIVE:
+            return Response({"detail": "This case is already active."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        child.status = Child.ACTIVE
+        child.case_status = Child.STAGE_PRE_ASSESSMENT
+        child.save(update_fields=["status", "case_status", "updated_at"])
+        self._log(child, ActivityLog.UPDATED)
+        return Response({"status": child.status, "case_status": child.case_status})
