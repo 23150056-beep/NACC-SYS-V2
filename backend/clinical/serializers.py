@@ -58,13 +58,23 @@ class ConsentRecordSerializer(serializers.ModelSerializer):
     child_name = serializers.CharField(source="child.fullname", read_only=True)
     template_title = serializers.CharField(source="template.title", read_only=True, default=None)
     recorded_by_name = serializers.CharField(source="recorded_by.fullname", read_only=True, default=None)
+    has_scan = serializers.SerializerMethodField()
+    scan_filename = serializers.SerializerMethodField()
 
     class Meta:
         model = ConsentRecord
         fields = ["id", "child", "child_name", "template", "template_title",
-                  "signer_name", "signer_relationship", "date", "scan", "status",
-                  "recorded_by", "recorded_by_name", "created_at"]
+                  "signer_name", "signer_relationship", "date", "scan", "has_scan",
+                  "scan_filename", "status", "recorded_by", "recorded_by_name",
+                  "created_at"]
         read_only_fields = ["recorded_by"]
+        extra_kwargs = {"scan": {"write_only": True, "required": False}}
+
+    def get_has_scan(self, obj):
+        return bool(obj.scan)
+
+    def get_scan_filename(self, obj):
+        return obj.scan.name.rsplit("/", 1)[-1] if obj.scan else ""
 
 
 class ClinicalInterviewRecordSerializer(serializers.ModelSerializer):

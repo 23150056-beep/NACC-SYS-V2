@@ -1,11 +1,17 @@
+import tempfile
+
 from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from accounts.models import Role
 from children.models import Child
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
     ClinicalInterviewRecord, ProblemEntry,
 )
+
+TEMP_MEDIA = tempfile.mkdtemp(prefix="nacc-test-media-")
 
 User = get_user_model()
 
@@ -148,6 +154,22 @@ class ConsentRecordTest(ClinicalBase):
         ConsentRecord.objects.create(child=hidden, signer_name="X", status="signed")
         self._auth("p@racco1.gov.ph")
         self.assertEqual(len(self.client.get("/api/consents/").data), 0)
+
+    @override_settings(MEDIA_ROOT=TEMP_MEDIA)
+    def test_consent_scan_upload_and_download(self):
+        self._auth("p@racco1.gov.ph")
+        scan = SimpleUploadedFile("consent.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+        r = self.client.post("/api/consents/", {
+            "child": self.child.id, "signer_name": "Guardian G",
+            "status": "signed", "scan": scan,
+        }, format="multipart")
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.data["has_scan"])
+        self.assertTrue(r.data["scan_filename"].endswith(".pdf"))
+        self.assertNotIn("scan", r.data)  # write-only — never echoed back
+        d = self.client.get(f"/api/consents/{r.data['id']}/download/")
+        self.assertEqual(d.status_code, 200)
+        b"".join(d.streaming_content)  # release handle (Windows)
 
 
 class ClinicalInterviewTest(ClinicalBase):

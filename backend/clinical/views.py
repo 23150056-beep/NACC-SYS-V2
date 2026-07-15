@@ -265,7 +265,9 @@ class ConsentRecordViewSet(_ChildScopedClinicalViewSet):
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
-        """Authenticated serving of the signed-consent scan."""
+        """Authenticated serving of the signed-consent scan. Served inline
+        (not as an attachment) so the frontend can preview it in a blob
+        viewer/iframe instead of triggering a file download."""
         from django.http import FileResponse
         obj = self.get_object()
         if not obj.scan:
@@ -276,7 +278,7 @@ class ConsentRecordViewSet(_ChildScopedClinicalViewSet):
         except (FileNotFoundError, ValueError):
             return Response({"detail": "File is missing from storage."},
                             status=status.HTTP_404_NOT_FOUND)
-        return FileResponse(handle, as_attachment=True,
+        return FileResponse(handle, as_attachment=False,
                             filename=obj.scan.name.rsplit("/", 1)[-1])
 
 
