@@ -313,6 +313,16 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // "Next possible sessions" — when can this child next be counseled, given
+  // their assigned psychologist's availability. Named function (not an
+  // inline effect body) so a later task can re-invoke it after booking.
+  const [slots, setSlots] = useState(null);
+  const canSuggestSlots = child.status === 'active' && !!child.psychologist_name;
+  const loadSlots = () => {
+    if (!canSuggestSlots) { setSlots(null); return; }
+    api.get(`/availability/next-slots/?child=${child.id}`).then((r) => setSlots(r.data)).catch(() => setSlots(null));
+  };
+  useEffect(() => { loadSlots(); /* eslint-disable-next-line */ }, [child.id, child.status, child.psychologist_name]);
   const location = [child.barangay, child.municipality, child.province].filter(Boolean).join(', ') || child.address || '—';
   const showReopen = isAdmin && child.status === 'inactive';
   const hasRecommendationContent = child.recommendation || child.referral_source || child.education_level || child.current_placement;
@@ -403,6 +413,14 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
                 <div>
                   <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Medical notes</div>
                   <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.medical_notes}</p>
+                </div>
+              )}
+              {canSuggestSlots && slots?.slots?.length > 0 && (
+                <div>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Next possible sessions — {slots.psychologist}</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {slots.slots.map((s, i) => <Badge key={i} tone="success" size="sm" dot>{s.weekday.slice(0, 3)} {s.date.slice(5)} · {s.start}–{s.end}</Badge>)}
+                  </div>
                 </div>
               )}
             </div>
