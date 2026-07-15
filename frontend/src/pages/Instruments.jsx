@@ -5,16 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { Card, Button, Badge, Input, Select, FormField, Alert, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
 import { printBlankForm } from '../utils/printForm';
+import InstrumentFormDrawer, { CATEGORIES, EMPTY_INSTRUMENT } from '../components/InstrumentFormDrawer';
 
-const CATEGORIES = [
-  { v: 'cognitive', label: 'Cognitive' },
-  { v: 'behavioral', label: 'Behavioral' },
-  { v: 'projective', label: 'Projective' },
-  { v: 'personality', label: 'Personality' },
-  { v: 'developmental', label: 'Developmental' },
-  { v: 'achievement', label: 'Achievement' },
-  { v: 'other', label: 'Other' },
-];
 const FORM_TYPES = [
   { v: 'consent', label: 'Consent Form' },
   { v: 'clinical_interview', label: 'Clinical Interview Form' },
@@ -30,7 +22,6 @@ const FIELD_TYPES = [
   { v: 'choice', label: 'Choice list' },
 ];
 
-const EMPTY_INSTRUMENT = { title: '', publisher: '', category: 'other', age_range: '', notes: '', owner: '' };
 const blankField = () => ({ label: '', field_type: 'text', options: [] });
 const EMPTY_TEMPLATE = { form_type: 'consent', title: '', body: '', fields: [blankField()], attestation: false };
 
@@ -38,8 +29,11 @@ export default function Instruments() {
   const { refresh: refreshActivity } = useActivity();
   const { user } = useAuth();
   const isAdmin = user?.role_name === 'Administrator';
+  // Catalog management now lives inside the Pre-Assessment wizard (step 4);
+  // psychologists only manage their agency form templates from this page.
+  const showCatalog = isAdmin;
   const toast = useToast();
-  const [tab, setTab] = useState('catalog');
+  const [tab, setTab] = useState(isAdmin ? 'catalog' : 'forms');
   const [instruments, setInstruments] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [psychologists, setPsychologists] = useState([]);
@@ -60,8 +54,10 @@ export default function Instruments() {
     setError('');
     if (!form.title.trim()) { setError('Title is required.'); return; }
     const payload = { ...form };
-    if (isAdmin && !payload.owner) { setError('Select the owning psychologist.'); return; }
-    if (!isAdmin) delete payload.owner;
+    // Shared (owner=null) instruments are legal now — an empty selection means
+    // "shared", not "invalid", so send an explicit null rather than ''.
+    if (isAdmin) payload.owner = payload.owner || null;
+    else delete payload.owner;
     delete payload.owner_name; delete payload.updated_at;
     try {
       if (form.id) await api.put(`/instruments/${form.id}/`, payload);
@@ -112,18 +108,28 @@ export default function Instruments() {
 
   return (
     <div style={{ ...PAGE, position: 'relative' }}>
-      <Alert tone="info" icon={<Icon name="shield-check" size={18} />} style={{ marginBottom: 16 }} title="Copyright-safe by design">
-        The catalog stores instrument <strong>titles and metadata only</strong> — never questions, scales, or scoring keys.
-        Published instruments are administered on paper using the psychologist&apos;s own materials.
-      </Alert>
+      {showCatalog ? (
+        <Alert tone="info" icon={<Icon name="shield-check" size={18} />} style={{ marginBottom: 16 }} title="Copyright-safe by design">
+          The catalog stores instrument <strong>titles and metadata only</strong> — never questions, scales, or scoring keys.
+          Published instruments are administered on paper using the psychologist&apos;s own materials.
+        </Alert>
+      ) : (
+        <Alert tone="info" icon={<Icon name="file-text" size={18} />} style={{ marginBottom: 16 }}>
+          Manage your consent and interview form templates. Instrument titles are managed inside the Pre-Assessment wizard (step 4).
+        </Alert>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div role="tablist" aria-label="Instrument sections" style={{ display: 'inline-flex', gap: 4, background: 'var(--ink-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: 3 }}>
-          {[['catalog', 'Instrument Catalog'], ['forms', 'Agency Form Templates']].map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-              style={{ padding: '6px 16px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, background: tab === k ? 'var(--blue-600)' : 'transparent', color: tab === k ? '#fff' : 'var(--text-muted)', transition: 'var(--transition-base)' }}>{label}</button>
-          ))}
-        </div>
+        {showCatalog ? (
+          <div role="tablist" aria-label="Instrument sections" style={{ display: 'inline-flex', gap: 4, background: 'var(--ink-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: 3 }}>
+            {[['catalog', 'Instrument Catalog'], ['forms', 'Agency Form Templates']].map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+                style={{ padding: '6px 16px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, background: tab === k ? 'var(--blue-600)' : 'transparent', color: tab === k ? '#fff' : 'var(--text-muted)', transition: 'var(--transition-base)' }}>{label}</button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Agency Form Templates</div>
+        )}
         {tab === 'catalog'
           ? <Button variant="primary" onClick={() => { setError(''); setForm({ ...EMPTY_INSTRUMENT }); }} iconLeft={<Icon name="plus" size={17} />}>Add Instrument Title</Button>
           : <Button variant="primary" onClick={() => { setError(''); setTpl({ ...EMPTY_TEMPLATE, fields: [blankField()] }); }} iconLeft={<Icon name="plus" size={17} />}>New Agency Form</Button>}
@@ -199,41 +205,11 @@ export default function Instruments() {
       )}
 
       {form && (
-        <div onClick={() => setForm(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 70, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: 460, maxWidth: '94%', height: '100%', background: 'var(--surface)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column', animation: 'racco-slide-left var(--dur-slow) var(--ease-out)' }}>
-            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--ink-50)' }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>{form.id ? 'Edit Instrument' : 'Add Instrument Title'}</div>
-              <button type="button" onClick={() => setForm(null)} aria-label="Close" {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="x" size={17} /></button>
-            </div>
-            <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{error}</Alert>}
-              <FormField label="Instrument Title" required hint="Bibliographic title only — items are never stored.">
-                <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-              </FormField>
-              <FormField label="Publisher"><Input value={form.publisher || ''} onChange={(e) => setForm({ ...form, publisher: e.target.value })} /></FormField>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <FormField label="Category">
-                  <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                    {CATEGORIES.map((c) => <option key={c.v} value={c.v}>{c.label}</option>)}
-                  </Select>
-                </FormField>
-                <FormField label="Age Range"><Input value={form.age_range || ''} onChange={(e) => setForm({ ...form, age_range: e.target.value })} placeholder="e.g. 6-18" /></FormField>
-              </div>
-              <FormField label="Notes"><Input value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></FormField>
-              {isAdmin && (
-                <FormField label="Owner (psychologist)" required>
-                  <Select value={form.owner || ''} onChange={(e) => setForm({ ...form, owner: e.target.value })}>
-                    <option value="">— Select psychologist —</option>
-                    {psychologists.map((p) => <option key={p.id} value={p.id}>{p.fullname || p.username}</option>)}
-                  </Select>
-                </FormField>
-              )}
-            </div>
-            <div style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
-              <Button variant="primary" fullWidth onClick={saveInstrument} iconLeft={<Icon name="save" size={16} />}>Save</Button>
-            </div>
-          </div>
-        </div>
+        <InstrumentFormDrawer
+          form={form} setForm={setForm}
+          psychologists={psychologists} isAdmin={isAdmin}
+          error={error} onSave={saveInstrument} onClose={() => setForm(null)}
+        />
       )}
 
       {tpl && (
