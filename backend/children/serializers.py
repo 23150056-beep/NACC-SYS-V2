@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from accounts.models import Role
 from children.models import Guardian, Child, TerminationRecord
 
 User = get_user_model()
@@ -42,9 +43,10 @@ class ChildSerializer(serializers.ModelSerializer):
             "psychologist", "psychologist_name",
             "guardian", "guardian_name", "termination",
             "pre_assessment_status", "instruments_used",
+            "updated_at",
         ]
         # The tracker moves only through the advance-status / terminate actions.
-        read_only_fields = ["case_status"]
+        read_only_fields = ["case_status", "updated_at"]
 
     def get_pre_assessment_status(self, obj):
         return "Answered" if any(
@@ -73,6 +75,24 @@ class ChildSerializer(serializers.ModelSerializer):
             "note": t.note,
             "terminated_by": (getattr(by, "fullname", "") or getattr(by, "username", "")) or None,
         }
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        role = getattr(getattr(getattr(request, "user", None), "role", None),
+                       "role_name", None) if request else None
+        if self.instance:
+            new_name = attrs.get("fullname")
+            if new_name and new_name != self.instance.fullname:
+                raise serializers.ValidationError(
+                    {"fullname": "The child's name cannot be changed after the record is created."})
+            if role == Role.PSYCHOLOGIST:
+                if ("assigned_psychologist" in attrs
+                        and attrs["assigned_psychologist"] != self.instance.assigned_psychologist):
+                    raise serializers.ValidationError(
+                        {"psychologist": "Only administrators or staff can reassign a psychologist."})
+                attrs.pop("assignee_sees_history", None)
+                attrs.pop("status", None)
+        return attrs
 
 
 class TerminationRecordSerializer(serializers.ModelSerializer):

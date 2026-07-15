@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from accounts.models import Role
-from accounts.permissions import RecordsAccess
+from accounts.permissions import RecordsAccess, ChildRecordAccess
 from activity.models import ActivityLog
 from activity.services import log_activity
 from children.models import Guardian, Child, TerminationRecord
@@ -53,6 +53,7 @@ class GuardianViewSet(_ArchivableViewSet):
 class ChildViewSet(_ArchivableViewSet):
     model = Child
     serializer_class = ChildSerializer
+    permission_classes = [ChildRecordAccess]
 
     def get_permissions(self):
         # Terminate/advance have their own rule (admin OR the child's assigned

@@ -59,6 +59,29 @@ class CanViewResults(BasePermission):
                     and _role_name(request) in RESULT_VIEWER_ROLES)
 
 
+class ChildRecordAccess(RecordsAccess):
+    """RecordsAccess plus multidisciplinary collaboration: the child's
+    assigned psychologist may edit (PUT/PATCH) the record. Create/archive
+    stay Admin/Staff-only; queryset scoping already hides other children."""
+
+    def has_permission(self, request, view):
+        if super().has_permission(request, view):
+            return True
+        return bool(request.user and request.user.is_authenticated
+                    and _role_name(request) == Role.PSYCHOLOGIST
+                    and request.method in ("PUT", "PATCH"))
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
+        role = _role_name(request)
+        if role in (Role.ADMINISTRATOR, Role.STAFF):
+            return True
+        return (role == Role.PSYCHOLOGIST
+                and request.method in ("PUT", "PATCH")
+                and obj.assigned_psychologist_id == request.user.id)
+
+
 class ProgressRecordAccess(BasePermission):
     """Progress log & goals. Read: admin/staff/psychologist. Write: admin or the
     child's assigned psychologist (Staff read-only). Object-level restricts a
