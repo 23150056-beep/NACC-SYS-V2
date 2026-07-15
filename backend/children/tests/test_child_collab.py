@@ -157,3 +157,12 @@ class NameSplitTests(APITestCase):
             "fullname": "Legacy Kid", "case_type": "Foster Care",
         }, format="json")
         self.assertEqual(r.status_code, 201)
+
+    def test_legacy_fullname_create_still_age_validated(self):
+        # The legacy path skips the new birth_date/gender/case_type REQUIRED
+        # check, but if a birth_date IS supplied it must still be in range —
+        # the legacy exemption must never bypass age validation.
+        r = self.client.post("/api/children/", {
+            "fullname": "Legacy Kid", "birth_date": "2000-01-01",
+        }, format="json")
+        self.assertEqual(r.status_code, 400)

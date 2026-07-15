@@ -505,11 +505,11 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
                   </FormField>
                 </div>
               )}
-              <FormField label="Birth Date" required>
-                <Input type="date" value={form.birth_date || ''} min={minBirthDate} max={maxBirthDate} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} required />
+              <FormField label="Birth Date" required={!isEdit}>
+                <Input type="date" value={form.birth_date || ''} min={!isEdit ? minBirthDate : undefined} max={!isEdit ? maxBirthDate : undefined} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} required={!isEdit} />
               </FormField>
-              <FormField label="Gender" required>
-                <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} required>
+              <FormField label="Gender" required={!isEdit}>
+                <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} required={!isEdit}>
                   <option value="">—</option><option>Male</option><option>Female</option>
                 </Select>
               </FormField>
@@ -543,8 +543,8 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
           <section>
             <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Case</div>
             <div className="racco-case-grid">
-              <FormField label="Case Type" required>
-                <Select value={form.case_type || ''} onChange={(e) => setForm({ ...form, case_type: e.target.value })} required>
+              <FormField label="Case Type" required={!isEdit}>
+                <Select value={form.case_type || ''} onChange={(e) => setForm({ ...form, case_type: e.target.value })} required={!isEdit}>
                   <option value="">— Select case type —</option>
                   {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
                 </Select>
