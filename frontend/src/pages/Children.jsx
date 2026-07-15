@@ -272,8 +272,6 @@ function ChildDrawer({ child, canEdit, canTerminate, others = [], onEdit, onTerm
   const location = [child.barangay, child.municipality, child.province].filter(Boolean).join(', ') || child.address || '—';
   const fields = [
     ['Gender', child.gender || '—'],
-    ['Age', child.age != null ? `${child.age} years old (${child.group})` : '—'],
-    ['Case Type', child.case_type || '—'],
     ['Case Category (NACC)', child.case_category || '—'],
     ['Assigned Psychologist', child.psychologist_name || '—'],
     ['Surrendered By', child.surrendered_by || '—'],
@@ -284,67 +282,78 @@ function ChildDrawer({ child, canEdit, canTerminate, others = [], onEdit, onTerm
     ['Pre-Assessment', child.pre_assessment_status || 'Not yet'],
   ];
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 60, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
-      <div role="dialog" aria-modal="true" aria-label={`Case record for ${child.fullname}`} onClick={(e) => e.stopPropagation()} style={{ width: 400, maxWidth: '90%', height: '100%', background: 'var(--surface)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column', animation: 'racco-slide-left var(--dur-slow) var(--ease-out)' }}>
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--ink-50)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 60, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
+      <div role="dialog" aria-modal="true" aria-label={`Case record for ${child.fullname}`} onClick={(e) => e.stopPropagation()}
+        style={{ width: 'min(980px, 96vw)', height: 'min(86vh, 820px)', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, background: 'var(--ink-50)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Avatar name={child.fullname} tone="brand" size="lg" />
             <div>
               <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>{child.fullname}</div>
               <div className="racco-mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>{child.ref}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                <StatusChip child={child} size="md" />
+                {child.case_type && <Badge tone="neutral" size="sm">{child.case_type}</Badge>}
+                {child.age != null && <span style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 600 }}>{child.age} yrs old ({child.group})</span>}
+              </div>
             </div>
           </div>
           <button onClick={onClose} aria-label="Close panel" title="Close" {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="x" size={17} /></button>
         </div>
         {others.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 20px', background: 'var(--blue-50)', borderBottom: '1px solid var(--blue-100)' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 24px', background: 'var(--blue-50)', borderBottom: '1px solid var(--blue-100)' }}>
             <Icon name="users" size={14} style={{ color: 'var(--blue-600)' }} />
             {others.map((o, i) => <Badge key={i} tone="brand" size="sm" dot>{o.name} ({o.role}) is here</Badge>)}
           </div>
         )}
-        <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><StatusChip child={child} size="md" /></div>
-          {child.status === 'inactive' && child.termination && (
-            <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
-              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Termination</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>{child.termination.reason_category}</div>
-              <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: '4px 0 0', lineHeight: 1.5 }}>{child.termination.note}</p>
-              <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>
-                {child.termination.date}{child.termination.terminated_by ? ` · by ${child.termination.terminated_by}` : ''}
-              </div>
+        <div className="racco-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
+          <div className="racco-case-grid">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {fields.map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 12, borderBottom: '1px solid var(--ink-100)' }}>
+                  <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
+                  <span style={{ fontSize: 13.5, color: 'var(--text-strong)', fontWeight: 700, textAlign: 'right' }}>{v}</span>
+                </div>
+              ))}
             </div>
-          )}
-          {fields.map(([k, v]) => (
-            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 12, borderBottom: '1px solid var(--ink-100)' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
-              <span style={{ fontSize: 13.5, color: 'var(--text-strong)', fontWeight: 700, textAlign: 'right' }}>{v}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {child.status === 'inactive' && child.termination && (
+                <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Termination</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>{child.termination.reason_category}</div>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-body)', margin: '4px 0 0', lineHeight: 1.5 }}>{child.termination.note}</p>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6 }}>
+                    {child.termination.date}{child.termination.terminated_by ? ` · by ${child.termination.terminated_by}` : ''}
+                  </div>
+                </div>
+              )}
+              {(child.instruments_used || []).length > 0 && (
+                <div>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Instrument titles used</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {child.instruments_used.map((t) => <Badge key={t} tone="brand" size="sm">{t}</Badge>)}
+                  </div>
+                </div>
+              )}
+              {child.referral_reason && (
+                <div>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Referral reason</div>
+                  <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.referral_reason}</p>
+                </div>
+              )}
+              {child.medical_notes && (
+                <div>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Medical notes</div>
+                  <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.medical_notes}</p>
+                </div>
+              )}
             </div>
-          ))}
-          {(child.instruments_used || []).length > 0 && (
-            <div>
-              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Instrument titles used</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {child.instruments_used.map((t) => <Badge key={t} tone="brand" size="sm">{t}</Badge>)}
-              </div>
-            </div>
-          )}
-          {child.referral_reason && (
-            <div>
-              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Referral reason</div>
-              <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.referral_reason}</p>
-            </div>
-          )}
-          {child.medical_notes && (
-            <div>
-              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Medical notes</div>
-              <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.medical_notes}</p>
-            </div>
-          )}
+          </div>
         </div>
         {(canEdit || canTerminate) && (
-          <div style={{ padding: 16, borderTop: '1px solid var(--border)', display: 'flex', gap: 10 }}>
-            {canEdit && <Button variant="secondary" fullWidth onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>}
-            {canTerminate && <Button variant="danger" fullWidth onClick={onTerminate} iconLeft={<Icon name="archive" size={16} />}>Terminate Case</Button>}
+          <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            {canEdit && <Button variant="secondary" onClick={onEdit} iconLeft={<Icon name="pencil" size={16} />}>Edit</Button>}
+            {canTerminate && <Button variant="danger" onClick={onTerminate} iconLeft={<Icon name="archive" size={16} />}>Terminate Case</Button>}
           </div>
         )}
       </div>
@@ -401,19 +410,20 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
   const fieldLabel = { fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 };
   const textarea = { width: '100%', resize: 'vertical', padding: '10px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 14, lineHeight: 1.5 };
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 70, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
-      <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()} style={{ width: 420, maxWidth: '92%', height: '100%', background: 'var(--surface)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column', animation: 'racco-slide-left var(--dur-slow) var(--ease-out)' }}>
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--ink-50)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 70, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
+      <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()}
+        style={{ width: 'min(980px, 96vw)', height: 'min(86vh, 820px)', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--ink-50)' }}>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>{isEdit ? 'Edit Record' : 'Add Record'}</div>
           <button type="button" onClick={onClose} aria-label="Close" {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--text-muted)')}><Icon name="x" size={17} /></button>
         </div>
         {others.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 20px', background: 'var(--blue-50)', borderBottom: '1px solid var(--blue-100)' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 24px', background: 'var(--blue-50)', borderBottom: '1px solid var(--blue-100)' }}>
             <Icon name="users" size={14} style={{ color: 'var(--blue-600)' }} />
             {others.map((o, i) => <Badge key={i} tone="brand" size="sm" dot>{o.name} ({o.role}) is here</Badge>)}
           </div>
         )}
-        <div className="racco-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="racco-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
           {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{error}</Alert>}
           {form._conflict && (
             <Alert tone="warning" icon={<Icon name="alert-triangle" size={18} />} title="This record was just changed by a teammate.">
@@ -425,111 +435,137 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
               </div>
             </Alert>
           )}
-          {/* Child name is not editable once a record exists (adviser). */}
-          {isEdit ? (
-            <div>
-              <div style={{ ...fieldLabel, marginBottom: 6 }}>Full Name</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)', color: 'var(--text-strong)', fontWeight: 700, fontSize: 14 }}>
-                {form.fullname}
-                <Icon name="lock" size={13} style={{ color: 'var(--text-faint)', marginLeft: 'auto' }} />
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 5 }}>The child&apos;s name cannot be changed after the record is created.</div>
-            </div>
-          ) : (
-            <FormField label="Full Name" required>
-              <Input value={form.fullname} onChange={(e) => setForm({ ...form, fullname: e.target.value })} required />
-            </FormField>
-          )}
-          <FormField label="Birth Date">
-            <Input type="date" value={form.birth_date || ''} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
-          </FormField>
-          <FormField label="Gender">
-            <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
-              <option value="">—</option><option>Male</option><option>Female</option>
-            </Select>
-          </FormField>
-          <FormField label="Province">
-            <Select value={form.province || ''} onChange={(e) => setForm({ ...form, province: e.target.value, municipality: '', barangay: '' })}>
-              <option value="">— Select province —</option>
-              {PROVINCES.map((p) => <option key={p}>{p}</option>)}
-            </Select>
-          </FormField>
-          <FormField label="Municipality / City">
-            <Select value={form.municipality || ''} disabled={!form.province} onChange={(e) => setForm({ ...form, municipality: e.target.value, barangay: '' })}>
-              <option value="">{form.province ? '— Select municipality —' : 'Select a province first'}</option>
-              {munis.map((mn) => <option key={mn}>{mn}</option>)}
-            </Select>
-          </FormField>
-          <FormField label="Barangay">
-            <Select value={form.barangay || ''} disabled={!form.municipality} onChange={(e) => setForm({ ...form, barangay: e.target.value })}>
-              <option value="">{form.municipality ? '— Select barangay —' : 'Select a municipality first'}</option>
-              {brgys.map((b) => <option key={b}>{b}</option>)}
-            </Select>
-          </FormField>
-          <FormField label="Case Type">
-            <Select value={form.case_type || ''} onChange={(e) => setForm({ ...form, case_type: e.target.value })}>
-              <option value="">— Select case type —</option>
-              {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
-            </Select>
-          </FormField>
-          <FormField label="Case Category (NACC)">
-            <Select value={form.case_category || ''} onChange={(e) => setForm({ ...form, case_category: e.target.value })}>
-              <option value="">— Select case category —</option>
-              {CASE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-            </Select>
-          </FormField>
-          <FormField label="Who Surrendered the Child">
-            <Select value={form.surrendered_by || ''} onChange={(e) => setForm({ ...form, surrendered_by: e.target.value })}>
-              <option value="">— Select —</option>
-              {SURRENDERED_BY.map((s) => <option key={s}>{s}</option>)}
-            </Select>
-          </FormField>
 
-          <div className="racco-eyebrow" style={{ fontSize: 10, marginTop: 4 }}>Profiling</div>
-          <FormField label="Referral Source" hint="Agency, LGU, or person who referred the child.">
-            <Input value={form.referral_source || ''} onChange={(e) => setForm({ ...form, referral_source: e.target.value })} />
-          </FormField>
-          <FormField label="Referral Reason">
-            <textarea value={form.referral_reason || ''} onChange={(e) => setForm({ ...form, referral_reason: e.target.value })} rows={3} style={textarea} />
-          </FormField>
-          <FormField label="Education Level">
-            <Input value={form.education_level || ''} onChange={(e) => setForm({ ...form, education_level: e.target.value })} placeholder="e.g. Grade 4" />
-          </FormField>
-          <FormField label="Current Placement">
-            <Input value={form.current_placement || ''} onChange={(e) => setForm({ ...form, current_placement: e.target.value })} placeholder="e.g. Foster family, residential facility" />
-          </FormField>
-          <FormField label="Medical Notes">
-            <textarea value={form.medical_notes || ''} onChange={(e) => setForm({ ...form, medical_notes: e.target.value })} rows={3} style={textarea} />
-          </FormField>
-
-          {isPsych ? (
-            <FormField label="Assigned Psychologist" hint="Reassignment is done by admin/staff.">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)', color: 'var(--text-strong)', fontWeight: 700, fontSize: 14 }}>
-                {form.psychologist_name || '—'}
-                <Icon name="lock" size={13} style={{ color: 'var(--text-faint)', marginLeft: 'auto' }} />
-              </div>
-            </FormField>
-          ) : (
-            <>
-              <FormField label="Assign Psychologist">
-                <Select value={form.psychologist || ''} onChange={(e) => setForm({ ...form, psychologist: e.target.value })}>
-                  <option value="">— Unassigned —</option>
-                  {psychologists.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.caseload} case{p.caseload === 1 ? '' : 's'}</option>)}
+          <section>
+            <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Identity</div>
+            <div className="racco-case-grid">
+              {/* Child name is not editable once a record exists (adviser). */}
+              {isEdit ? (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div style={{ ...fieldLabel, marginBottom: 6 }}>Full Name</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)', color: 'var(--text-strong)', fontWeight: 700, fontSize: 14 }}>
+                    {form.fullname}
+                    <Icon name="lock" size={13} style={{ color: 'var(--text-faint)', marginLeft: 'auto' }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 5 }}>The child&apos;s name cannot be changed after the record is created.</div>
+                </div>
+              ) : (
+                <FormField label="Full Name" required style={{ gridColumn: '1 / -1' }}>
+                  <Input value={form.fullname} onChange={(e) => setForm({ ...form, fullname: e.target.value })} required />
+                </FormField>
+              )}
+              <FormField label="Birth Date">
+                <Input type="date" value={form.birth_date || ''} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
+              </FormField>
+              <FormField label="Gender">
+                <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+                  <option value="">—</option><option>Male</option><option>Female</option>
                 </Select>
               </FormField>
-              {isEdit && form.psychologist && String(form.psychologist) !== String(form._origPsychologist) && (
-                <div style={{ padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)' }}>
-                  <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12.5, color: 'var(--text-strong)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={form.assignee_sees_history !== false} onChange={(e) => setForm({ ...form, assignee_sees_history: e.target.checked })} style={{ marginTop: 2, accentColor: 'var(--blue-600)' }} />
-                    <span>Carry this child&apos;s session history to the new psychologist (they&apos;ll see prior records). Uncheck to give them a fresh start.</span>
-                  </label>
+            </div>
+          </section>
+
+          <section>
+            <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Address</div>
+            <div className="racco-case-grid">
+              <FormField label="Province">
+                <Select value={form.province || ''} onChange={(e) => setForm({ ...form, province: e.target.value, municipality: '', barangay: '' })}>
+                  <option value="">— Select province —</option>
+                  {PROVINCES.map((p) => <option key={p}>{p}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Municipality / City">
+                <Select value={form.municipality || ''} disabled={!form.province} onChange={(e) => setForm({ ...form, municipality: e.target.value, barangay: '' })}>
+                  <option value="">{form.province ? '— Select municipality —' : 'Select a province first'}</option>
+                  {munis.map((mn) => <option key={mn}>{mn}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Barangay">
+                <Select value={form.barangay || ''} disabled={!form.municipality} onChange={(e) => setForm({ ...form, barangay: e.target.value })}>
+                  <option value="">{form.municipality ? '— Select barangay —' : 'Select a municipality first'}</option>
+                  {brgys.map((b) => <option key={b}>{b}</option>)}
+                </Select>
+              </FormField>
+            </div>
+          </section>
+
+          <section>
+            <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Case</div>
+            <div className="racco-case-grid">
+              <FormField label="Case Type">
+                <Select value={form.case_type || ''} onChange={(e) => setForm({ ...form, case_type: e.target.value })}>
+                  <option value="">— Select case type —</option>
+                  {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Case Category (NACC)">
+                <Select value={form.case_category || ''} onChange={(e) => setForm({ ...form, case_category: e.target.value })}>
+                  <option value="">— Select case category —</option>
+                  {CASE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Who Surrendered the Child">
+                <Select value={form.surrendered_by || ''} onChange={(e) => setForm({ ...form, surrendered_by: e.target.value })}>
+                  <option value="">— Select —</option>
+                  {SURRENDERED_BY.map((s) => <option key={s}>{s}</option>)}
+                </Select>
+              </FormField>
+            </div>
+          </section>
+
+          <section>
+            <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Recommendation</div>
+            <div className="racco-case-grid">
+              <FormField label="Referral Source" hint="Agency, LGU, or person who referred the child.">
+                <Input value={form.referral_source || ''} onChange={(e) => setForm({ ...form, referral_source: e.target.value })} />
+              </FormField>
+              <FormField label="Education Level">
+                <Input value={form.education_level || ''} onChange={(e) => setForm({ ...form, education_level: e.target.value })} placeholder="e.g. Grade 4" />
+              </FormField>
+              <FormField label="Current Placement">
+                <Input value={form.current_placement || ''} onChange={(e) => setForm({ ...form, current_placement: e.target.value })} placeholder="e.g. Foster family, residential facility" />
+              </FormField>
+              <FormField label="Referral Reason" style={{ gridColumn: '1 / -1' }}>
+                <textarea value={form.referral_reason || ''} onChange={(e) => setForm({ ...form, referral_reason: e.target.value })} rows={3} style={textarea} />
+              </FormField>
+              <FormField label="Medical Notes" style={{ gridColumn: '1 / -1' }}>
+                <textarea value={form.medical_notes || ''} onChange={(e) => setForm({ ...form, medical_notes: e.target.value })} rows={3} style={textarea} />
+              </FormField>
+            </div>
+          </section>
+
+          <section>
+            <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Assignment</div>
+            {isPsych ? (
+              <FormField label="Assigned Psychologist" hint="Reassignment is done by admin/staff.">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)', color: 'var(--text-strong)', fontWeight: 700, fontSize: 14 }}>
+                  {form.psychologist_name || '—'}
+                  <Icon name="lock" size={13} style={{ color: 'var(--text-faint)', marginLeft: 'auto' }} />
                 </div>
-              )}
-            </>
-          )}
+              </FormField>
+            ) : (
+              <>
+                <FormField label="Assign Psychologist">
+                  <Select value={form.psychologist || ''} onChange={(e) => setForm({ ...form, psychologist: e.target.value })}>
+                    <option value="">— Unassigned —</option>
+                    {psychologists.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.caseload} case{p.caseload === 1 ? '' : 's'}</option>)}
+                  </Select>
+                </FormField>
+                {isEdit && form.psychologist && String(form.psychologist) !== String(form._origPsychologist) && (
+                  <div style={{ marginTop: 10, padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)' }}>
+                    <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 12.5, color: 'var(--text-strong)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={form.assignee_sees_history !== false} onChange={(e) => setForm({ ...form, assignee_sees_history: e.target.checked })} style={{ marginTop: 2, accentColor: 'var(--blue-600)' }} />
+                      <span>Carry this child&apos;s session history to the new psychologist (they&apos;ll see prior records). Uncheck to give them a fresh start.</span>
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
         </div>
-        <div style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
-          <Button type="submit" variant="primary" fullWidth iconLeft={<Icon name="save" size={16} />}>Save Record</Button>
+        <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" iconLeft={<Icon name="save" size={16} />}>Save Record</Button>
         </div>
       </form>
     </div>
