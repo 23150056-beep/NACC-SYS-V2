@@ -166,3 +166,29 @@ class NameSplitTests(APITestCase):
             "fullname": "Legacy Kid", "birth_date": "2000-01-01",
         }, format="json")
         self.assertEqual(r.status_code, 400)
+
+
+class DuplicateCheckTests(APITestCase):
+    def setUp(self):
+        self.staff = make_user("dc@t.ph", Role.STAFF)
+        self.psych = make_user("dp@t.ph", Role.PSYCHOLOGIST)
+        self.archived = Child.objects.create(
+            fullname="Mika R. Santos", first_name="Mika", last_name="Santos",
+            birth_date="2016-01-10", status=Child.INACTIVE)
+
+    def test_finds_archived_record(self):
+        self.client.force_authenticate(self.staff)
+        r = self.client.get("/api/children/check-duplicate/?first_name=mika&last_name=santos")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["matches"]), 1)
+        self.assertEqual(r.data["matches"][0]["status"], "inactive")
+
+    def test_birth_date_plus_last_name_matches(self):
+        self.client.force_authenticate(self.staff)
+        r = self.client.get("/api/children/check-duplicate/?last_name=santos&birth_date=2016-01-10")
+        self.assertEqual(len(r.data["matches"]), 1)
+
+    def test_psychologist_forbidden(self):
+        self.client.force_authenticate(self.psych)
+        r = self.client.get("/api/children/check-duplicate/?first_name=mika&last_name=santos")
+        self.assertEqual(r.status_code, 403)

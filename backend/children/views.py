@@ -1,5 +1,6 @@
 ﻿import time
 from django.core.cache import cache
+from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -199,3 +200,30 @@ class ChildViewSet(_ArchivableViewSet):
         child.save(update_fields=["status", "case_status", "updated_at"])
         self._log(child, ActivityLog.UPDATED)
         return Response({"status": child.status, "case_status": child.case_status})
+
+    @action(detail=False, methods=["get"], url_path="check-duplicate")
+    def check_duplicate(self, request):
+        """Intake helper: does a record (active OR archived) already exist for
+        this child? Staff/Admin only — powers the 'reopen instead of
+        duplicating' warning on the Add Record form."""
+        role = getattr(getattr(request.user, "role", None), "role_name", None)
+        if role not in (Role.ADMINISTRATOR, Role.STAFF):
+            return Response({"detail": "Staff or administrators only."},
+                            status=status.HTTP_403_FORBIDDEN)
+        first = (request.query_params.get("first_name") or "").strip()
+        last = (request.query_params.get("last_name") or "").strip()
+        birth = (request.query_params.get("birth_date") or "").strip()
+        if not last:
+            return Response({"matches": []})
+        q = Q(last_name__iexact=last) if not first else \
+            Q(last_name__iexact=last, first_name__iexact=first)
+        if birth and not first:
+            q &= Q(birth_date=birth)
+        elif not first:
+            return Response({"matches": []})  # last name alone is too broad
+        matches = Child.objects.filter(q).order_by("-updated_at")[:5]
+        return Response({"matches": [{
+            "id": c.id, "fullname": c.fullname, "status": c.status,
+            "birth_date": c.birth_date,
+            "psychologist_name": getattr(c.assigned_psychologist, "fullname", None),
+        } for c in matches]})
