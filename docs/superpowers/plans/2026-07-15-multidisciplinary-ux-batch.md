@@ -33,6 +33,7 @@
 11. **LIFO (adviser #4)** = Records list defaults to newest-first, with an A–Z toggle kept (the earlier adviser round asked for alphabetical — both available, LIFO default).
 12. **"Status has a function / add event" (adviser #13)**: appointment status actions (Completed / No-show / Cancel) ALREADY exist in the appointment detail modal — verified in code. The new part is calendar slot-click → prefilled booking form ("add event").
 13. **Consent embedding (adviser #9)** already exists (template document text renders in the wizard); the rework keeps it and adds the missing pieces: single flow (no On-file/Record-new toggle), consents table at the bottom, scan upload + in-app preview (the `ConsentRecord.scan` FileField already exists in the model, unused by the UI).
+14. **Records layout (follow-up request)**: the Records module's right-side drawers (detail + add/edit) become large CENTERED modals (~980px, two-column body) — only Records changes; other modules' drawers (Reports upload, Instruments, Schedule booking) stay as they are. Component names `ChildDrawer`/`ChildForm` are KEPT so every other task's instructions still apply — only their container and internal arrangement change.
 
 ---
 
@@ -1774,11 +1775,101 @@ git commit -m "feat(records): psychologist availability panel at assignment time
 
 ---
 
+### Task 19: Records module — centered full-screen case modals (replace side drawers)
+
+**Why:** The 400–420px right-side drawers cram a whole case file into one narrow scrolling column. A large centered modal reads like an actual case record: identity at the top, details in two columns, actions always visible.
+
+**Files:**
+- Modify: `frontend/src/pages/Children.jsx` (`ChildDrawer` + `ChildForm` containers/layout — keep both function names and all internal content blocks)
+- Modify: `frontend/src/index.css` (one responsive utility class)
+
+**Interfaces:**
+- Consumes: nothing new. All other Children.jsx tasks (T3 presence strip, T5 termination history, T6 recommendation group, T12 name grid, T15 next-sessions, T18 availability panel) drop into the regions named below unchanged.
+
+- [ ] **Step 1: Responsive grid utility.** Append to `frontend/src/index.css`:
+
+```css
+/* Centered case-modal two-column body; collapses on small screens. */
+.racco-case-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
+@media (max-width: 760px) { .racco-case-grid { grid-template-columns: 1fr; } }
+```
+
+- [ ] **Step 2: `ChildDrawer` becomes a centered case modal.** Replace its outer two wrappers (the `position:fixed` overlay + the `width:400` panel) with:
+
+```jsx
+<div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 60, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
+  <div role="dialog" aria-modal="true" aria-label={`Case record for ${child.fullname}`} onClick={(e) => e.stopPropagation()}
+    style={{ width: 'min(980px, 96vw)', height: 'min(86vh, 820px)', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+```
+
+Inside, keep the existing header bar (avatar + name + ref + close button) and add the status chip + case type + age inline in the header (they currently sit in the body). Body becomes:
+
+```jsx
+<div className="racco-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
+  <div className="racco-case-grid">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* LEFT column: the existing `fields` rows (identity/case/address facts) */}
+    </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* RIGHT column, in this order: termination history (T5) · Recommendation group (T6) ·
+          next possible sessions (T15) · instruments used · referral reason · medical notes */}
+    </div>
+  </div>
+</div>
+```
+
+Footer (Edit / Terminate / Reopen buttons) stays a fixed bar at the bottom, right-aligned buttons (drop `fullWidth`). The T3 presence strip renders directly under the header, full width.
+
+- [ ] **Step 3: `ChildForm` becomes a centered intake modal.** Same overlay/container as Step 2 (the inner element stays a `<form>`). Body uses grouped two-column sections — move every existing field into these groups without changing any field code:
+
+```jsx
+<div className="racco-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+  {error && <Alert .../>}
+  {/* conflict alert (T3) full width */}
+  <section>
+    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Identity</div>
+    <div className="racco-case-grid">{/* name grid (T12) spans; birth date; gender */}</div>
+  </section>
+  <section>
+    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Address</div>
+    <div className="racco-case-grid">{/* province / municipality / barangay */}</div>
+  </section>
+  <section>
+    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Case</div>
+    <div className="racco-case-grid">{/* case type / case category / previous custodian */}</div>
+  </section>
+  <section>
+    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Recommendation</div>
+    <div className="racco-case-grid">{/* referral source / educational placement / place of recovery;
+        referral reason, medical notes, recommendation textareas get style={{ gridColumn: '1 / -1' }} */}</div>
+  </section>
+  <section>
+    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Assignment</div>
+    {/* psychologist select + T18 availability panel + T3 psych read-only variant + carry-history box — full width */}
+  </section>
+</div>
+```
+
+Footer: `<div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>` with a Cancel `Button variant="secondary"` (calls `onClose`) and the Save button (drop `fullWidth`).
+
+- [ ] **Step 4: Remove the slide-left animation references** (`racco-slide-left`) from both components — the centered modal uses the fade only (or an existing pop/scale keyframe if one exists in index.css; check first, do not invent one inline).
+
+- [ ] **Step 5: Verify** — build; browser at desktop AND ~700px width: open a record (two columns → one column collapse), open Add Record, tab through fields, Escape and click-outside still close, terminate/reopen/edit buttons reachable without scrolling the footer.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add frontend/src/pages/Children.jsx frontend/src/index.css
+git commit -m "feat(records): centered full-screen case modals replace side drawers"
+```
+
+---
+
 ## Self-Review (done at plan time)
 
 - **Spec coverage (first batch):** psychologist edits assigned child → T1/T3; multidisciplinary "Google-Docs-like" collab → T2/T3 (scoped decision #1); calendar off sidebar + dashboard mini widget + click-to-fullscreen → T10; bento no-scroll dashboard + per-module scrolling → T10; grouped result entries per child → T9; terminated records archived for admin + reuse when a child returns → T4/T5; Previous Custodian / Address / Recommendation → T6; instrument module inside pre-assessment step 4 → T7/T8; new instrument title lists (children + PAP) → T7; ethical-consideration check → answered in chat + hardening T11.
 - **Spec coverage (adviser suggestions 1–13):** #1 name split → T12; #2 age 5–17 + required `*` → T13; #3 specific labels (Educational Placement, Place of Recovery) → T13; #4 LIFO records → T14; #5 weekday checkboxes → T15 step 4; #6 assigned child's next counseling slots → T15 steps 3/5/6; #7 staff sees psychologist availability → T15 step 6 (already works, verify); #8 clickable notifications → T16; #9 embedded readable consent → T17 (document text already renders; kept front-and-center); #10 remove Record New / On file toggle → T17; #11 consents in a bottom table → T17; #12 consent file preview → T17; #13 status function / add event → T15 step 5 (status actions already exist; slot-click booking added).
-- **Spec coverage (follow-up request):** availability visible BEFORE assigning a psychologist on the child record form → T18 (frontend-only; staff already have read access to all availability blocks).
+- **Spec coverage (follow-up requests):** availability visible BEFORE assigning a psychologist on the child record form → T18 (frontend-only; staff already have read access to all availability blocks); Records detail/edit as centered full-screen modals instead of side drawers → T19 (decision #14).
 - **Known ambiguities intentionally flagged:** decisions #1–#13 at the top; confirm with the user before executing if any look wrong.
 - **Type consistency:** `expected_updated_at` (write-only, ISO string) and `updated_at` (read-only) used consistently across T1–T3; `terminations` list shape identical in T4 backend and T5 frontend; `audience` values `child|adoptive_parent|both` identical in T7 model, seed, and T8 filters; `InstrumentFormDrawer` props match both call sites; `next-slots` response shape identical in T15 backend, Schedule hints, and Children drawer; `has_scan`/`scan_filename`/`download` consistent between T17 backend and ConsentStep; T12's name-lock `validate()` REPLACES T1's fullname-only check (implement T1's version first, extend it in T12).
-- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T12→T13 sequential (validation builds on name parts). `Children.jsx` is touched by T3, T5, T6, T12, T13, T14, T15-step-6 — run those serially, never in parallel subagents. `PreAssessment.jsx` is touched by T8 and T17 — serialize. `Schedule.jsx`/`Topbar.jsx`/`Dashboard.jsx` overlap across T10, T15, T16 — serialize T10→T15→T16. Do T10 last among dashboard tasks if the in-flight Sidebar change hasn't landed yet. T18 also touches `Children.jsx` — include it in that serial chain. Suggested overall order: T1, T2, T3, T4, T5, T6, T12, T13, T14, T18, T7, T8, T17, T9, T10, T15, T16, T11.
+- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T12→T13 sequential (validation builds on name parts). `Children.jsx` is touched by T3, T5, T6, T12, T13, T14, T15-step-6 — run those serially, never in parallel subagents. `PreAssessment.jsx` is touched by T8 and T17 — serialize. `Schedule.jsx`/`Topbar.jsx`/`Dashboard.jsx` overlap across T10, T15, T16 — serialize T10→T15→T16. Do T10 last among dashboard tasks if the in-flight Sidebar change hasn't landed yet. T18 and T19 also touch `Children.jsx` — include them in that serial chain; run T19 (layout) right after T3 so the later Children tasks land inside the new modal regions. Suggested overall order: T1, T2, T3, T19, T4, T5, T6, T12, T13, T14, T18, T7, T8, T17, T9, T10, T15, T16, T11.
