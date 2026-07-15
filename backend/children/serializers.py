@@ -36,7 +36,7 @@ class ChildSerializer(serializers.ModelSerializer):
     class Meta:
         model = Child
         fields = [
-            "id", "fullname", "birth_date", "gender",
+            "id", "first_name", "middle_initial", "last_name", "fullname", "birth_date", "gender",
             "province", "municipality", "barangay", "address",
             "case_type", "case_category", "surrendered_by", "status", "case_status", "assignee_sees_history",
             "photo", "referral_source", "referral_reason",
@@ -47,7 +47,8 @@ class ChildSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         # The tracker moves only through the advance-status / terminate actions.
-        read_only_fields = ["case_status", "updated_at"]
+        # fullname is derived (Child.save() composes it from the name parts).
+        read_only_fields = ["case_status", "updated_at", "fullname"]
 
     def get_pre_assessment_status(self, obj):
         return "Answered" if any(
@@ -87,15 +88,38 @@ class ChildSerializer(serializers.ModelSerializer):
             })
         return out
 
+    def create(self, validated_data):
+        # Back-compat: some callers (and older API integrations) still create
+        # a child by sending only "fullname", with no first/last name parts.
+        # fullname is read-only now, so it never reaches validated_data — split
+        # it the same way the split_existing_fullnames data migration does, so
+        # those callers keep working and Child.save() can still compose it.
+        if not validated_data.get("first_name") and not validated_data.get("last_name"):
+            legacy_fullname = (self.initial_data or {}).get("fullname")
+            parts = str(legacy_fullname).split() if legacy_fullname else []
+            if parts:
+                validated_data["last_name"] = parts[-1] if len(parts) > 1 else ""
+                validated_data["first_name"] = " ".join(parts[:-1]) if len(parts) > 1 else parts[0]
+        return super().create(validated_data)
+
     def validate(self, attrs):
         request = self.context.get("request")
         role = getattr(getattr(getattr(request, "user", None), "role", None),
                        "role_name", None) if request else None
         if self.instance:
-            new_name = attrs.get("fullname")
-            if new_name and new_name != self.instance.fullname:
-                raise serializers.ValidationError(
-                    {"fullname": "The child's name cannot be changed after the record is created."})
+            # fullname is read-only (DRF drops it from `attrs`), so an attempt to
+            # PATCH it has to be caught from the raw request payload instead.
+            raw = self.initial_data if hasattr(self, "initial_data") else {}
+            for f in ("first_name", "middle_initial", "last_name", "fullname"):
+                if f in attrs:
+                    new_val = attrs[f]
+                elif f in raw:
+                    new_val = raw[f]
+                else:
+                    continue
+                if new_val != getattr(self.instance, f):
+                    raise serializers.ValidationError(
+                        {f: "The child's name cannot be changed after the record is created."})
             if role == Role.PSYCHOLOGIST:
                 if ("assigned_psychologist" in attrs
                         and attrs["assigned_psychologist"] != self.instance.assigned_psychologist):

@@ -97,6 +97,11 @@ class Child(models.Model):
     )
     # Set at (re)assignment: does the current assignee see the child's prior assessments.
     assignee_sees_history = models.BooleanField(default=True)
+    # Name parts (adviser): fullname stays as the composed display column so
+    # every existing consumer keeps working.
+    first_name = models.CharField(max_length=100, blank=True)
+    middle_initial = models.CharField(max_length=5, blank=True)
+    last_name = models.CharField(max_length=100, blank=True)
     fullname = models.CharField(max_length=150)
     birth_date = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=10, blank=True)
@@ -127,6 +132,12 @@ class Child(models.Model):
 
     class Meta:
         db_table = "tbl_child"
+
+    def save(self, *args, **kwargs):
+        if self.first_name or self.last_name:
+            mi = f"{self.middle_initial.rstrip('.')}." if self.middle_initial else ""
+            self.fullname = " ".join(p for p in (self.first_name, mi, self.last_name) if p)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.fullname

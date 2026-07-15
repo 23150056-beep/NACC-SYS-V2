@@ -85,3 +85,26 @@ class ConcurrencyPresenceTests(APITestCase):
         r = self.client.get(f"/api/children/{self.child.id}/presence/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data["others"]), 1)
+
+
+class NameSplitTests(APITestCase):
+    def setUp(self):
+        self.staff = make_user("ns@t.ph", Role.STAFF)
+        self.client.force_authenticate(self.staff)
+
+    def test_create_composes_fullname(self):
+        r = self.client.post("/api/children/", {
+            "first_name": "Mika", "middle_initial": "R", "last_name": "Santos",
+            "birth_date": "2016-01-10", "gender": "Female", "case_type": "Foster Care",
+        }, format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["fullname"], "Mika R. Santos")
+
+    def test_name_parts_locked_after_create(self):
+        r = self.client.post("/api/children/", {
+            "first_name": "Ana", "last_name": "Cruz",
+            "birth_date": "2016-01-10", "gender": "Female", "case_type": "Foster Care",
+        }, format="json")
+        r2 = self.client.patch(f"/api/children/{r.data['id']}/",
+                               {"last_name": "Reyes"}, format="json")
+        self.assertEqual(r2.status_code, 400)
