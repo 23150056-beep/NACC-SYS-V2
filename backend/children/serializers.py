@@ -127,6 +127,20 @@ class ChildSerializer(serializers.ModelSerializer):
                         {"psychologist": "Only administrators or staff can reassign a psychologist."})
                 attrs.pop("assignee_sees_history", None)
                 attrs.pop("status", None)
+        else:
+            # Create: fullname is read-only and first_name/last_name are
+            # blank=True on the model, so DRF won't require any of them on
+            # its own. Require a name in some form here — either the normal
+            # first_name/last_name fields, or a legacy fullname-only payload
+            # (the same fallback create() accepts for backward compatibility).
+            has_name = (
+                attrs.get("first_name")
+                or attrs.get("last_name")
+                or (self.initial_data or {}).get("fullname")
+            )
+            if not has_name:
+                raise serializers.ValidationError(
+                    {"first_name": "Provide a name - either first_name/last_name, or a legacy fullname."})
         return attrs
 
 

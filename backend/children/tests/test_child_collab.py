@@ -108,3 +108,9 @@ class NameSplitTests(APITestCase):
         r2 = self.client.patch(f"/api/children/{r.data['id']}/",
                                {"last_name": "Reyes"}, format="json")
         self.assertEqual(r2.status_code, 400)
+
+    def test_create_without_any_name_rejected(self):
+        r = self.client.post("/api/children/", {
+            "birth_date": "2016-01-10",
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
