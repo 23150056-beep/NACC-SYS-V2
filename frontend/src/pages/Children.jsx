@@ -355,7 +355,7 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
                 <div>
                   <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Recommendation</div>
                   {child.recommendation && <p style={{ fontSize: 13, color: 'var(--text-body)', margin: '0 0 10px', lineHeight: 1.55 }}>{child.recommendation}</p>}
-                  {[['Referral Source', child.referral_source], ['Education Level', child.education_level], ['Current Placement', child.current_placement]]
+                  {[['Referral Source', child.referral_source], ['Educational Placement', child.education_level], ['Place of Recovery', child.current_placement]]
                     .filter(([, v]) => v).map(([k, v]) => (
                       <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 10, borderBottom: '1px solid var(--ink-100)', marginBottom: 10 }}>
                         <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
@@ -445,6 +445,13 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
   const brgys = BARANGAYS[form.municipality] || [];
   const fieldLabel = { fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 };
   const textarea = { width: '100%', resize: 'vertical', padding: '10px 13px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', fontFamily: 'var(--font-sans)', fontSize: 14, lineHeight: 1.5 };
+  // Agency only serves children aged 5-17: the birth date picker's bounds
+  // mirror that (max = today minus 5 years, min = today minus 18 years);
+  // the backend's validate_birth_date is the authoritative check.
+  const today = new Date();
+  const maxBirthDate = new Date(today.getFullYear() - 5, today.getMonth(), today.getDate()).toISOString().slice(0, 10);
+  const minBirthDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate()).toISOString().slice(0, 10);
+  const requiredFieldsFilled = form.first_name && form.last_name && form.birth_date && form.gender && form.case_type;
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 70, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>
       <form onSubmit={onSubmit} onClick={(e) => e.stopPropagation()}
@@ -498,11 +505,11 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
                   </FormField>
                 </div>
               )}
-              <FormField label="Birth Date">
-                <Input type="date" value={form.birth_date || ''} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
+              <FormField label="Birth Date" required>
+                <Input type="date" value={form.birth_date || ''} min={minBirthDate} max={maxBirthDate} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} required />
               </FormField>
-              <FormField label="Gender">
-                <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+              <FormField label="Gender" required>
+                <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} required>
                   <option value="">—</option><option>Male</option><option>Female</option>
                 </Select>
               </FormField>
@@ -536,8 +543,8 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
           <section>
             <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 10 }}>Case</div>
             <div className="racco-case-grid">
-              <FormField label="Case Type">
-                <Select value={form.case_type || ''} onChange={(e) => setForm({ ...form, case_type: e.target.value })}>
+              <FormField label="Case Type" required>
+                <Select value={form.case_type || ''} onChange={(e) => setForm({ ...form, case_type: e.target.value })} required>
                   <option value="">— Select case type —</option>
                   {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
                 </Select>
@@ -564,10 +571,10 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
               <FormField label="Referral Source" hint="Agency, LGU, or person who referred the child.">
                 <Input value={form.referral_source || ''} onChange={(e) => setForm({ ...form, referral_source: e.target.value })} />
               </FormField>
-              <FormField label="Education Level">
+              <FormField label="Educational Placement">
                 <Input value={form.education_level || ''} onChange={(e) => setForm({ ...form, education_level: e.target.value })} placeholder="e.g. Grade 4" />
               </FormField>
-              <FormField label="Current Placement">
+              <FormField label="Place of Recovery">
                 <Input value={form.current_placement || ''} onChange={(e) => setForm({ ...form, current_placement: e.target.value })} placeholder="e.g. Foster family, residential facility" />
               </FormField>
               <FormField label="Referral Reason" style={{ gridColumn: '1 / -1' }}>
@@ -613,7 +620,7 @@ function ChildForm({ form, setForm, psychologists, error, isPsych = false, other
         </div>
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" iconLeft={<Icon name="save" size={16} />}>Save Record</Button>
+          <Button type="submit" variant="primary" disabled={!isEdit && !requiredFieldsFilled} iconLeft={<Icon name="save" size={16} />}>Save Record</Button>
         </div>
       </form>
     </div>
