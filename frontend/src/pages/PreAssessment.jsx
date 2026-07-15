@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
-import { Card, Button, Badge, Input, Select, FormField, Alert, EmptyState, Avatar, Icon, PAGE } from '../ui';
+import { useAuth } from '../context/AuthContext';
+import { Card, Button, Badge, Input, Select, FormField, Alert, EmptyState, Avatar, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { printBlankForm } from '../utils/printForm';
+import InstrumentFormDrawer, { EMPTY_INSTRUMENT } from '../components/InstrumentFormDrawer';
 
 const STEPS = ['Child', 'Consent', 'Interview', 'Instruments', 'Problems', 'Complete'];
 
@@ -26,6 +28,7 @@ function FormBody({ body }) {
 export default function PreAssessment() {
   const toast = useToast();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [step, setStep] = useState(0);
   const [maxStep, setMaxStep] = useState(0);
   const [children, setChildren] = useState([]);
@@ -39,6 +42,8 @@ export default function PreAssessment() {
   const [problems, setProblems] = useState([]);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+  const [instForm, setInstForm] = useState(null); // instrument add/edit drawer
+  const [instError, setInstError] = useState('');
 
   useEffect(() => {
     api.get('/children/').then((r) => setChildren(r.data.filter((c) => c.status === 'active'))).catch(() => {});
@@ -90,6 +95,22 @@ export default function PreAssessment() {
     if (selectedInstruments.length === 0) { setError('Select at least one instrument title.'); return; }
     try { await patchPa({ instruments: selectedInstruments }); advanceTo(4); }
     catch (err) { setError(JSON.stringify(err.response?.data || 'Could not save instruments.')); }
+  };
+
+  // Instrument catalog module embedded in step 4 — add/edit titles inline
+  // without leaving the wizard.
+  const reloadInstruments = () => api.get('/instruments/').then((r) => setInstruments(r.data)).catch(() => {});
+  const saveInstrument = async () => {
+    setInstError('');
+    if (!instForm.title.trim()) { setInstError('Title is required.'); return; }
+    const payload = { ...instForm };
+    delete payload.owner; delete payload.owner_name; delete payload.updated_at;
+    try {
+      if (instForm.id) await api.put(`/instruments/${instForm.id}/`, payload);
+      else await api.post('/instruments/', payload);
+      toast.success(instForm.id ? 'Instrument updated' : 'Instrument added');
+      setInstForm(null); reloadInstruments();
+    } catch (err) { setInstError(JSON.stringify(err.response?.data || 'Save failed')); }
   };
 
   const complete = async () => {
@@ -171,24 +192,50 @@ export default function PreAssessment() {
           <Alert disclaimer style={{ marginBottom: 14 }} title="Paper administration.">
             Instruments are administered offline using the psychologist&apos;s own printed materials. The system records titles only.
           </Alert>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+            <div className="racco-eyebrow" style={{ fontSize: 11 }}>Instrument catalog</div>
+            <Button variant="secondary" onClick={() => { setInstError(''); setInstForm({ ...EMPTY_INSTRUMENT }); }} iconLeft={<Icon name="plus" size={15} />}>Add instrument title</Button>
+          </div>
+
           {instruments.length === 0 ? (
-            <EmptyState icon={<Icon name="clipboard-pen" size={24} />} title="Your catalog is empty" description="Add instrument titles under Pre-Assessment Instruments first." />
+            <EmptyState icon={<Icon name="clipboard-pen" size={24} />} title="Your catalog is empty" description="Add the instrument titles you administer, right here." />
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {instruments.map((i) => {
-                const on = selectedInstruments.includes(i.id);
-                return (
-                  <label key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px', borderRadius: 'var(--radius-lg)', border: `1px solid ${on ? 'var(--blue-400)' : 'var(--border)'}`, background: on ? 'var(--blue-50)' : 'var(--surface)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={on} style={{ accentColor: 'var(--blue-600)' }}
-                      onChange={() => setSelectedInstruments((s) => on ? s.filter((x) => x !== i.id) : [...s, i.id])} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{i.title}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[i.publisher, i.age_range && `ages ${i.age_range}`].filter(Boolean).join(' · ') || '—'}</div>
+            <div style={{ marginBottom: 16 }}>
+              {[
+                ['For children', instruments.filter((i) => i.audience !== 'adoptive_parent')],
+                ['For prospective adoptive parents', instruments.filter((i) => i.audience === 'adoptive_parent' || i.audience === 'both')],
+              ].map(([label, list]) => (
+                <div key={label} style={{ marginBottom: 16 }}>
+                  <div className="racco-eyebrow" style={{ fontSize: 10.5, marginBottom: 8 }}>{label}</div>
+                  {list.length === 0 ? (
+                    <div style={{ fontSize: 12.5, color: 'var(--text-faint)', padding: '4px 2px 8px' }}>None yet.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {list.map((i) => {
+                        const on = selectedInstruments.includes(i.id);
+                        const owned = String(i.owner) === String(user?.id);
+                        return (
+                          <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px', borderRadius: 'var(--radius-lg)', border: `1px solid ${on ? 'var(--blue-400)' : 'var(--border)'}`, background: on ? 'var(--blue-50)' : 'var(--surface)', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={on} style={{ accentColor: 'var(--blue-600)' }}
+                                onChange={() => setSelectedInstruments((s) => on ? s.filter((x) => x !== i.id) : [...s, i.id])} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{i.title}</div>
+                                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[i.publisher, i.age_range && `ages ${i.age_range}`].filter(Boolean).join(' · ') || '—'}</div>
+                              </div>
+                              <Badge tone="neutral" size="sm">{i.category}</Badge>
+                            </label>
+                            {owned && (
+                              <button title="Edit" onClick={() => { setInstError(''); setInstForm({ ...i, owner: i.owner || '' }); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <Badge tone="neutral" size="sm">{i.category}</Badge>
-                  </label>
-                );
-              })}
+                  )}
+                </div>
+              ))}
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -237,6 +284,10 @@ export default function PreAssessment() {
             </div>
           </div>
         </Card>
+      )}
+
+      {instForm && (
+        <InstrumentFormDrawer form={instForm} setForm={setInstForm} error={instError} onSave={saveInstrument} onClose={() => setInstForm(null)} />
       )}
     </div>
   );
