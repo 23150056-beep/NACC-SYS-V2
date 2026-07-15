@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../context/AuthContext';
-import { Card, StatCard, Button, Badge, Icon, ROLE_META, PAGE } from '../ui';
+import { StatCard, Button, Badge, Icon, ROLE_META } from '../ui';
 import api from '../api/client';
 import { useActivity } from '../context/ActivityContext';
 import { eventText, timeAgo } from '../components/Topbar';
+import MiniCalendar from '../components/MiniCalendar';
 
 const EMPTY = {
   census: { active: 0, inactive: 0, by_case_type: {}, by_case_status: {} },
@@ -17,6 +18,29 @@ const EMPTY = {
 const PURPOSE_LABEL = { pre_assessment: 'Pre-Assessment', session: 'Session', follow_up: 'Follow-up' };
 const GAP_TONE = { danger: 'var(--red-500)', warning: 'var(--amber-500)', info: 'var(--blue-400)' };
 
+// Self-contained tile: mirrors Card's visual chrome (border/shadow/radius/eyebrow/title
+// tokens) but owns its own header + scroll-body divs directly, rather than nesting a
+// scrolling child inside Card's opaque content wrapper. Card's internal `<div style={{padding}}>`
+// has neither `min-height: 0` nor non-visible overflow, so a `flex:1` scroll child dropped
+// inside it hits the classic flexbox "won't shrink below content size" trap and never
+// actually scrolls — it just grows the tile past the grid row instead. Owning the whole
+// chain here lets `minHeight: 0` genuinely take effect on the scrolling element.
+const Tile = ({ eyebrow, title, span = 1, children, style = {} }) => (
+  <div style={{
+    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+    boxShadow: 'var(--shadow-sm)', overflow: 'hidden', position: 'relative',
+    gridColumn: `span ${span}`, minHeight: 0, display: 'flex', flexDirection: 'column', ...style,
+  }}>
+    <div style={{ flex: 'none', padding: '16px 16px 0' }}>
+      {eyebrow && <div className="racco-eyebrow" style={{ marginBottom: 4 }}>{eyebrow}</div>}
+      {title && <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-strong)', margin: 0 }}>{title}</h3>}
+    </div>
+    <div className="racco-scroll" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 16 }}>
+      {children}
+    </div>
+  </div>
+);
+
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -24,17 +48,22 @@ export default function Dashboard() {
   const isPsychologist = role === 'Psychologist';
   const m = ROLE_META[role] || ROLE_META.Staff;
   const [stats, setStats] = useState(EMPTY);
+  const [appointments, setAppointments] = useState([]);
   const { events } = useActivity();
-  const feed = events.slice(0, 5);
+  const feed = events.slice(0, 15);
 
   useEffect(() => {
     api.get('/reports/dashboard/?range=monthly').then((r) => setStats({ ...EMPTY, ...r.data })).catch(() => setStats(EMPTY));
   }, []);
 
+  useEffect(() => {
+    api.get('/appointments/').then((r) => setAppointments(r.data)).catch(() => {});
+  }, []);
+
   const census = stats.census || EMPTY.census;
   const caseMix = Object.entries(census.by_case_type || {});
   const sessionsThisPeriod = (stats.trend || []).reduce((sum, t) => sum + t.count, 0);
-  const gaps = (stats.care_gaps || []).slice(0, 8);
+  const gaps = stats.care_gaps || [];
 
   const actions = [
     { label: 'Records', icon: 'folder-heart', variant: 'secondary', to: '/children', roles: ['Administrator', 'Psychologist', 'Staff'] },
@@ -44,89 +73,62 @@ export default function Dashboard() {
   ].filter((a) => a.roles.includes(role));
 
   return (
-    <div style={PAGE}>
-      {/* Quick actions */}
-      <Card padding="20px" accent={m.color} style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span style={{ width: 44, height: 44, borderRadius: 'var(--radius-lg)', background: m.soft, color: m.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="sparkles" size={22} /></span>
-            <div>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text-strong)' }}>Quick actions for {role}s</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Jump straight to what your role handles most.</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {actions.map((a) => (
-              <Button key={a.label} variant={a.variant} onClick={() => navigate(a.to)} iconLeft={<Icon name={a.icon} size={17} />}>{a.label}</Button>
-            ))}
-          </div>
-        </div>
-      </Card>
+    <div style={{ padding: '18px 22px', height: 'calc(100vh - var(--topbar-h, 64px))', display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden auto' }}>
+      {/* Row 1 — slim quick actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 'none' }}>
+        <span style={{ width: 30, height: 30, borderRadius: 'var(--radius-md)', background: m.soft, color: m.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="sparkles" size={16} /></span>
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, color: 'var(--text-strong)', marginRight: 4 }}>Quick actions</span>
+        {actions.map((a) => (
+          <Button key={a.label} variant={a.variant} onClick={() => navigate(a.to)} iconLeft={<Icon name={a.icon} size={16} />}>{a.label}</Button>
+        ))}
+      </div>
 
-      {/* Today's schedule strip (athena scheduling-tile pattern) */}
-      <Card eyebrow="Today" title="Schedule" padding="18px" style={{ marginBottom: 20 }}>
-        {stats.today_schedule.length === 0 ? (
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No appointments today.</div>
-        ) : (
-          <div className="racco-scroll" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
-            {stats.today_schedule.map((a) => (
-              <button key={a.id} onClick={() => navigate('/schedule')}
-                style={{ flex: 'none', width: 190, textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: a.status === 'completed' ? 'var(--success-50)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span className="racco-mono" style={{ fontWeight: 800, fontSize: 14, color: 'var(--blue-700)' }}>{a.time}</span>
-                  <Badge tone={a.status === 'completed' ? 'success' : a.status === 'no_show' ? 'amber' : 'brand'} size="sm">{a.status.replace('_', '-')}</Badge>
-                </div>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.child_name}{a.age != null ? `, ${a.age}` : ''}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{PURPOSE_LABEL[a.purpose] || a.purpose}{!isPsychologist && a.psychologist ? ` · ${a.psychologist}` : ''}</div>
-              </button>
-            ))}
-          </div>
-        )}
-        {stats.availability_today.length > 0 && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span className="racco-eyebrow" style={{ fontSize: 10 }}>Available today</span>
-            {stats.availability_today.map((b, i) => (
-              <Badge key={i} tone="success" size="sm" dot>{b.psychologist} · {b.start}–{b.end}</Badge>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* Census stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 16, marginBottom: 20 }}>
+      {/* Row 2 — census stat tiles */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 14, flex: 'none' }}>
         <StatCard label={isPsychologist ? 'My Active Cases' : 'Active Children'} value={census.active} tone="success" icon={<Icon name="users" size={18} />} />
         <StatCard label="In Counseling" value={(census.by_case_status || {}).counseling || 0} tone="brand" icon={<Icon name="heart-pulse" size={18} />} hint={`${(census.by_case_status || {}).pre_assessment || 0} in pre-assessment`} />
         <StatCard label="Inactive (Terminated)" value={census.inactive} tone="brand" icon={<Icon name="archive" size={18} />} />
         <StatCard label="Pending Pre-Assessments" value={stats.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} hint={stats.unassessed ? `${stats.unassessed} not yet assessed` : undefined} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 20, marginBottom: 20 }}>
-        <Card eyebrow="Census" title="Intake vs. termination" padding="20px">
-          {stats.intake_vs_termination.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No intake activity yet.</div>
+      {/* Bento body — two fixed rows, tiles scroll internally */}
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', gap: 14, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,1fr) minmax(0,1fr)' }}>
+        {/* Today's schedule strip (athena scheduling-tile pattern) */}
+        <Tile eyebrow="Today" title="Schedule" span={2}>
+          {stats.today_schedule.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No appointments today.</div>
           ) : (
-            <div style={{ width: '100%', height: 220 }}>
-              <ResponsiveContainer>
-                <BarChart data={stats.intake_vs_termination}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="intake" name="Intake" fill="var(--blue-600)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="terminations" name="Terminations" fill="var(--amber-500)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="racco-scroll" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+              {stats.today_schedule.map((a) => (
+                <button key={a.id} onClick={() => navigate('/schedule')}
+                  style={{ flex: 'none', width: 190, textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: a.status === 'completed' ? 'var(--success-50)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span className="racco-mono" style={{ fontWeight: 800, fontSize: 14, color: 'var(--blue-700)' }}>{a.time}</span>
+                    <Badge tone={a.status === 'completed' ? 'success' : a.status === 'no_show' ? 'amber' : 'brand'} size="sm">{a.status.replace('_', '-')}</Badge>
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.child_name}{a.age != null ? `, ${a.age}` : ''}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{PURPOSE_LABEL[a.purpose] || a.purpose}{!isPsychologist && a.psychologist ? ` · ${a.psychologist}` : ''}</div>
+                </button>
+              ))}
             </div>
           )}
-          {caseMix.length > 0 && (
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {caseMix.map(([type, n]) => <Badge key={type} tone="success" size="sm" dot>Active · {type} — {n}</Badge>)}
+          {stats.availability_today.length > 0 && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span className="racco-eyebrow" style={{ fontSize: 10 }}>Available today</span>
+              {stats.availability_today.map((b, i) => (
+                <Badge key={i} tone="success" size="sm" dot>{b.psychologist} · {b.start}–{b.end}</Badge>
+              ))}
             </div>
           )}
-        </Card>
+        </Tile>
 
-        <Card eyebrow="Follow-up needed" title="Care-gap alerts" padding="20px">
+        {/* Mini calendar — click opens the full schedule page */}
+        <Tile eyebrow="Schedule" title="Calendar">
+          <MiniCalendar appointments={appointments} onOpen={() => navigate('/schedule')} />
+        </Tile>
+
+        {/* Care-gap alerts */}
+        <Tile eyebrow="Follow-up needed" title="Care-gap alerts">
           {gaps.length === 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--success-600)' }}>
               <Icon name="check-circle-2" size={16} /> No gaps detected.
@@ -147,11 +149,38 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </Card>
-      </div>
+        </Tile>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
-        <Card eyebrow="Clinical team" title="Sessions by psychologist" padding="20px">
+        {/* Intake vs. termination */}
+        <Tile eyebrow="Census" title="Intake vs. termination" span={2}>
+          {stats.intake_vs_termination.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No intake activity yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 12 }}>
+              <div style={{ flex: 1, minHeight: 150 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.intake_vs_termination}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="intake" name="Intake" fill="var(--blue-600)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="terminations" name="Terminations" fill="var(--amber-500)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {caseMix.length > 0 && (
+                <div style={{ flex: 'none', paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {caseMix.map(([type, n]) => <Badge key={type} tone="success" size="sm" dot>Active · {type} — {n}</Badge>)}
+                </div>
+              )}
+            </div>
+          )}
+        </Tile>
+
+        {/* Sessions by psychologist */}
+        <Tile eyebrow="Clinical team" title="Sessions by psychologist">
           {(stats.per_psychologist || []).length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No completed sessions yet.</div>
           ) : (
@@ -174,9 +203,10 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-        </Card>
+        </Tile>
 
-        <Card eyebrow="Live" title="Activity Feed" padding="20px">
+        {/* Activity feed */}
+        <Tile eyebrow="Live" title="Activity Feed">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {feed.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '8px 0' }}>No recent activity.</div>
@@ -190,7 +220,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </Card>
+        </Tile>
       </div>
     </div>
   );
