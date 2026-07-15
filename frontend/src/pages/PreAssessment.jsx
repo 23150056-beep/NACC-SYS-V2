@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
@@ -294,88 +294,133 @@ export default function PreAssessment() {
 }
 
 function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError }) {
-  const [mode, setMode] = useState(consents.length ? 'existing' : 'new');
-  const [form, setForm] = useState({ template: '', signer_name: '', signer_relationship: '', status: 'signed' });
-  const signed = useMemo(() => consents.filter((c) => c.status === 'signed'), [consents]);
+  const toast = useToast();
+  const [form, setForm] = useState({ template: '', signer_name: '', signer_relationship: '', status: 'signed', fileObj: null });
+  const [preview, setPreview] = useState(null); // { url, type, title }
+  const [busy, setBusy] = useState(false);
+  const tpl = templates.find((t) => String(t.id) === String(form.template));
 
   const recordNew = async () => {
     setError('');
     if (!form.signer_name.trim()) { setError('Enter the signer’s name.'); return; }
+    setBusy(true);
     try {
-      const { data } = await api.post('/consents/', {
-        child: child.id, template: form.template || null,
-        signer_name: form.signer_name, signer_relationship: form.signer_relationship,
-        status: form.status,
-      });
+      const fd = new FormData();
+      fd.append('child', child.id);
+      if (form.template) fd.append('template', form.template);
+      fd.append('signer_name', form.signer_name);
+      fd.append('signer_relationship', form.signer_relationship);
+      fd.append('status', form.status);
+      if (form.fileObj) fd.append('scan', form.fileObj);
+      const { data } = await api.post('/consents/', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       await onRefresh();
       if (data.status === 'signed') onLinked(data.id);
       else setError('Consent recorded but not signed — a signed consent is required to complete the pre-assessment.');
     } catch (err) {
       setError(JSON.stringify(err.response?.data || 'Could not record consent.'));
-    }
+    } finally { setBusy(false); }
   };
+
+  const openPreview = async (c) => {
+    try {
+      const res = await api.get(`/consents/${c.id}/download/`, { responseType: 'blob' });
+      setPreview({ url: URL.createObjectURL(res.data), type: res.data.type, title: c.scan_filename || c.signer_name });
+    } catch { toast.error('Could not load the file.'); }
+  };
+  const closePreview = () => { if (preview) URL.revokeObjectURL(preview.url); setPreview(null); };
+
+  const th = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' };
+  const td = { padding: '9px 12px', fontSize: 12.5, color: 'var(--text-body)' };
 
   return (
     <Card eyebrow="Step 2" title={`Consent — ${child.fullname}`} padding="22px">
       <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
-        Verify a consent already on file or record the paper consent collected from the guardian.
+        The agency&apos;s consent document is embedded below — read it with the guardian, record the signed paper consent, and attach a scan if available.
       </p>
-      <div style={{ display: 'inline-flex', gap: 4, background: 'var(--ink-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: 3, marginBottom: 16 }}>
-        {[['existing', `On file (${signed.length})`], ['new', 'Record new']].map(([k, label]) => (
-          <button key={k} onClick={() => setMode(k)} style={{ padding: '6px 14px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12.5, background: mode === k ? 'var(--blue-600)' : 'transparent', color: mode === k ? '#fff' : 'var(--text-muted)' }}>{label}</button>
-        ))}
-      </div>
-
-      {mode === 'existing' ? (
-        signed.length === 0 ? (
-          <EmptyState icon={<Icon name="file-text" size={24} />} title="No signed consent on file" description="Record the consent you collected on paper." />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {signed.map((c) => (
-              <button key={c.id} onClick={() => onLinked(c.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)' }}>
-                <Icon name="file-text" size={18} style={{ color: 'var(--blue-600)' }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{c.signer_name || 'Consent'} {c.signer_relationship ? `(${c.signer_relationship})` : ''}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.date} · {c.template_title || 'no template'}</div>
-                </div>
-                <Badge tone="success" size="sm" dot>Signed</Badge>
-              </button>
-            ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <FormField label="Consent form template" hint="Your agency-authored consent form.">
+          <Select value={form.template} onChange={(e) => setForm({ ...form, template: e.target.value })}>
+            <option value="">— None / generic —</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.title} (v{t.version})</option>)}
+          </Select>
+        </FormField>
+        {tpl && (
+          <div style={{ marginBottom: 4 }}>
+            <FormBody body={tpl.body} />
+            <Button variant="ghost" onClick={() => printBlankForm(tpl)} iconLeft={<Icon name="printer" size={15} />}>Print blank form</Button>
           </div>
-        )
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <FormField label="Consent form template" hint="Your agency-authored consent form.">
-            <Select value={form.template} onChange={(e) => setForm({ ...form, template: e.target.value })}>
-              <option value="">— None / generic —</option>
-              {templates.map((t) => <option key={t.id} value={t.id}>{t.title} (v{t.version})</option>)}
-            </Select>
-          </FormField>
-          {form.template && (() => {
-            const sel = templates.find((t) => String(t.id) === String(form.template));
-            if (!sel) return null;
-            return (
-              <div style={{ marginBottom: 4 }}>
-                <FormBody body={sel.body} />
-                <Button variant="ghost" onClick={() => printBlankForm(sel)} iconLeft={<Icon name="printer" size={15} />}>
-                  Print blank form
-                </Button>
-              </div>
-            );
-          })()}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <FormField label="Signer name" required><Input value={form.signer_name} onChange={(e) => setForm({ ...form, signer_name: e.target.value })} /></FormField>
-            <FormField label="Relationship to child"><Input value={form.signer_relationship} onChange={(e) => setForm({ ...form, signer_relationship: e.target.value })} placeholder="e.g. Foster mother" /></FormField>
-          </div>
-          <FormField label="Status">
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <FormField label="Signer name" required><Input value={form.signer_name} onChange={(e) => setForm({ ...form, signer_name: e.target.value })} /></FormField>
+          <FormField label="Relationship to child"><Input value={form.signer_relationship} onChange={(e) => setForm({ ...form, signer_relationship: e.target.value })} placeholder="e.g. Foster mother" /></FormField>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <FormField label="Status" required>
             <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
               <option value="signed">Signed</option>
               <option value="pending">Pending</option>
               <option value="declined">Declined</option>
             </Select>
           </FormField>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button variant="primary" onClick={recordNew} iconLeft={<Icon name="save" size={16} />}>Record consent & continue</Button>
+          <FormField label="Scanned signed form" hint="Optional — PDF or photo of the signed paper.">
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setForm({ ...form, fileObj: e.target.files?.[0] || null })} style={{ fontSize: 13, fontFamily: 'var(--font-sans)' }} />
+          </FormField>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button variant="primary" onClick={recordNew} disabled={busy} iconLeft={<Icon name="save" size={16} />}>Record consent & continue</Button>
+        </div>
+      </div>
+
+      {/* All consents on file — tabular, at the bottom */}
+      <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+        <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Consents on file ({consents.length})</div>
+        {consents.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>No consents recorded for {child.fullname} yet.</div>
+        ) : (
+          <div className="racco-scroll" style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
+              <thead><tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
+                {['Signer', 'Relationship', 'Template', 'Date', 'Status', 'File', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {consents.map((c) => (
+                  <tr key={c.id} style={{ borderBottom: '1px solid var(--ink-100)' }}>
+                    <td style={{ ...td, fontWeight: 700, color: 'var(--text-strong)' }}>{c.signer_name || '—'}</td>
+                    <td style={td}>{c.signer_relationship || '—'}</td>
+                    <td style={td}>{c.template_title || '—'}</td>
+                    <td style={td}>{c.date}</td>
+                    <td style={td}><Badge tone={c.status === 'signed' ? 'success' : c.status === 'declined' ? 'amber' : 'neutral'} size="sm" dot>{c.status}</Badge></td>
+                    <td style={td}>
+                      {c.has_scan
+                        ? <Button variant="ghost" onClick={() => openPreview(c)} iconLeft={<Icon name="eye" size={14} />}>Preview</Button>
+                        : <span style={{ color: 'var(--text-faint)' }}>—</span>}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      {c.status === 'signed' && (
+                        <Button variant="secondary" onClick={() => onLinked(c.id)} iconLeft={<Icon name="check" size={14} />}>Use this consent</Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Scan preview modal */}
+      {preview && (
+        <div onClick={closePreview} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 90 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: '94%', height: '86vh', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, color: 'var(--text-strong)' }}>Consent scan — {preview.title}</span>
+              <button onClick={closePreview} aria-label="Close preview" style={iconBtn('var(--text-muted)')}><Icon name="x" size={16} /></button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, background: 'var(--ink-50)' }}>
+              {preview.type.startsWith('image/')
+                ? <img src={preview.url} alt="Consent scan" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                : <iframe title="Consent scan" src={preview.url} style={{ width: '100%', height: '100%', border: 'none' }} />}
+            </div>
           </div>
         </div>
       )}
