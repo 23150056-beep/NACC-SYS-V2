@@ -117,7 +117,17 @@ export default function Children() {
   const canEditRecord = (c) => canManage
     || (isPsych && c.status === 'active' && String(c.psychologist) === String(user?.id));
 
-  const openCreate = () => { setError(''); setForm({ ...EMPTY }); };
+  // Per-user draft key so an unsaved intake typed by one user never leaks
+  // into another user's "Add Record" session on a shared workstation.
+  const draftKey = `nacc-child-draft:${user?.id ?? 'anon'}`;
+
+  const openCreate = () => {
+    setError('');
+    let draft = null;
+    try { draft = JSON.parse(localStorage.getItem(draftKey) || 'null'); } catch { /* corrupt draft */ }
+    const meaningful = draft && Object.entries(draft).some(([k, v]) => k !== 'assignee_sees_history' && v);
+    setForm({ ...EMPTY, _draft: meaningful ? draft : null });
+  };
   const openEdit = (c) => { setError(''); setForm({ ...EMPTY, ...c, psychologist: c.psychologist || '', _origPsychologist: c.psychologist || '' }); };
 
   const save = async (e) => {
@@ -127,13 +137,14 @@ export default function Children() {
     delete payload.age; delete payload.group; delete payload.ref;
     delete payload.psychologist_name; delete payload.guardian_name;
     delete payload._origPsychologist; delete payload.termination; delete payload.photo;
-    delete payload.updated_at; delete payload._conflict;
+    delete payload.updated_at; delete payload._conflict; delete payload._draft;
     if (!payload.psychologist) payload.psychologist = null;
     if (!payload.birth_date) delete payload.birth_date;
     if (form.id) delete payload.fullname;
     try {
       if (form.id) await api.put(`/children/${form.id}/`, payload);
       else await api.post('/children/', payload);
+      try { localStorage.removeItem(draftKey); } catch { /* private browsing */ }
       toast.success(form.id ? 'Record updated' : 'Record added');
       setForm(null);
       load();
@@ -290,7 +301,7 @@ export default function Children() {
       </Card>
 
       {sel && <ChildDrawer child={sel} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} isAdmin={isAdmin} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onReopen={() => { if (window.confirm('Reopen this case? All previous records and termination history are kept.')) reopen(sel); }} onClose={() => setSel(null)} />}
-      {form && <ChildForm form={form} setForm={setForm} psychologists={psychologists} blocks={blocks} error={error} isPsych={isPsych} isAdmin={isAdmin} others={others} onSubmit={save} onClose={() => setForm(null)} onReopen={onDupReopen} onOpenExisting={onDupOpenExisting} />}
+      {form && <ChildForm form={form} setForm={setForm} draftKey={draftKey} psychologists={psychologists} blocks={blocks} error={error} isPsych={isPsych} isAdmin={isAdmin} others={others} onSubmit={save} onClose={() => setForm(null)} onReopen={onDupReopen} onOpenExisting={onDupOpenExisting} />}
       {terminating && <TerminateModal child={terminating} onConfirm={terminate} onClose={() => setTerminating(null)} />}
     </div>
   );
@@ -451,13 +462,26 @@ function TerminateModal({ child, onConfirm, onClose }) {
   );
 }
 
-function ChildForm({ form, setForm, psychologists, blocks = [], error, isPsych = false, isAdmin = false, others = [], onSubmit, onClose, onReopen, onOpenExisting }) {
+function ChildForm({ form, setForm, draftKey, psychologists, blocks = [], error, isPsych = false, isAdmin = false, others = [], onSubmit, onClose, onReopen, onOpenExisting }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   const isEdit = !!form.id;
+  // Draft autosave (create mode only) — debounced write to localStorage so an
+  // accidental modal close (or crash) never loses a half-typed intake record.
+  useEffect(() => {
+    if (form.id) return; // edits are server-backed; drafts are create-only
+    const t = setTimeout(() => {
+      const data = { ...form };
+      delete data._draft; delete data._conflict;
+      if (Object.entries(data).some(([k, v]) => k !== 'assignee_sees_history' && v)) {
+        try { localStorage.setItem(draftKey, JSON.stringify(data)); } catch { /* storage full */ }
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [form, draftKey]);
   // Duplicate/returning-child detection (create mode only): debounce-check
   // while typing so intake staff can reopen an archived record instead of
   // accidentally creating a second one.
@@ -501,6 +525,15 @@ function ChildForm({ form, setForm, psychologists, blocks = [], error, isPsych =
           </div>
         )}
         <div className="racco-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {form._draft && (
+            <Alert tone="info" icon={<Icon name="history" size={18} />} title="Unsaved draft found">
+              You started a record earlier that wasn&apos;t saved. Continue where you left off?
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <Button variant="secondary" size="sm" onClick={() => setForm({ ...EMPTY, ...form._draft, _draft: null })} iconLeft={<Icon name="rotate-ccw" size={14} />}>Restore draft</Button>
+                <Button variant="ghost" size="sm" onClick={() => { try { localStorage.removeItem(draftKey); } catch { /* private browsing */ } setForm((f) => ({ ...f, _draft: null })); }}>Discard</Button>
+              </div>
+            </Alert>
+          )}
           {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />}>{error}</Alert>}
           {form._conflict && (
             <Alert tone="warning" icon={<Icon name="alert-triangle" size={18} />} title="This record was just changed by a teammate.">

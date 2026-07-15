@@ -27,6 +27,13 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('access');
     localStorage.removeItem('refresh');
+    // Clear any unsaved intake drafts (keyed per-user) so they never leak to
+    // whichever account logs in next on this workstation.
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('nacc-child-draft:'))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch { /* private browsing / storage unavailable */ }
     setUser(null);
   };
 
