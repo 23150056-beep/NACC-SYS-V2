@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from accounts.models import Role
 from children.models import Guardian, Child, TerminationRecord
 
@@ -99,6 +100,18 @@ class ChildSerializer(serializers.ModelSerializer):
         legacy_fullname = (self.initial_data or {}).get("fullname")
         return str(legacy_fullname).split() if legacy_fullname else []
 
+    def validate_birth_date(self, value):
+        # The agency only serves children aged 5-17 (inclusive); this uses
+        # an exact-birthday-aware age calculation, not a floor(days/365).
+        if value is None:
+            return value
+        today = timezone.localdate()
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+        if not (5 <= age <= 17):
+            raise serializers.ValidationError(
+                "The child must be between 5 and 17 years old.")
+        return value
+
     def create(self, validated_data):
         if not validated_data.get("first_name") and not validated_data.get("last_name"):
             parts = self._legacy_fullname_parts()
@@ -140,14 +153,30 @@ class ChildSerializer(serializers.ModelSerializer):
             # (the exact same acceptance test create()'s fallback uses, via
             # _legacy_fullname_parts() — .strip() here matches .split()'s
             # whitespace-only rejection there, so the two can't diverge).
+            legacy_parts = self._legacy_fullname_parts()
             has_name = (
                 (attrs.get("first_name") or "").strip()
                 or (attrs.get("last_name") or "").strip()
-                or self._legacy_fullname_parts()
+                or legacy_parts
             )
             if not has_name:
                 raise serializers.ValidationError(
                     {"first_name": "Provide a name - either first_name/last_name, or a legacy fullname."})
+            # Task 13: the agency's standard intake requires first_name,
+            # last_name, birth_date, gender, and case_type all together.
+            # This does NOT apply to the legacy fullname-only back-compat
+            # shape above (Task 1/12) — those callers never supply split
+            # name parts at all, and existing integrations/tests rely on
+            # that path staying lenient (see children/tests/test_api.py
+            # and activity/tests/test_activity.py).
+            if not legacy_parts:
+                missing = {
+                    f: "This field is required."
+                    for f in ("first_name", "last_name", "birth_date", "gender", "case_type")
+                    if not str(attrs.get(f) or "").strip()
+                }
+                if missing:
+                    raise serializers.ValidationError(missing)
         return attrs
 
 

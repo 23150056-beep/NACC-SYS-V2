@@ -126,3 +126,34 @@ class NameSplitTests(APITestCase):
             "first_name": "   ", "birth_date": "2016-01-10",
         }, format="json")
         self.assertEqual(r.status_code, 400)
+
+    def _payload(self, **over):
+        base = {"first_name": "Leo", "last_name": "Diaz", "birth_date": "2016-01-10",
+                "gender": "Male", "case_type": "Foster Care"}
+        base.update(over)
+        return base
+
+    def test_age_below_5_rejected(self):
+        r = self.client.post("/api/children/", self._payload(birth_date="2024-01-01"), format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_age_above_17_rejected(self):
+        r = self.client.post("/api/children/", self._payload(birth_date="2000-01-01"), format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_required_fields_on_create(self):
+        r = self.client.post("/api/children/", {"first_name": "Solo"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        for f in ("last_name", "birth_date", "gender", "case_type"):
+            self.assertIn(f, r.data)
+
+    def test_legacy_fullname_create_still_exempt_from_new_required_fields(self):
+        # Task 1/12 back-compat path: a bare `fullname` payload is still
+        # accepted without birth_date/gender/case_type — Task 13's stricter
+        # per-field requirements apply to the first_name/last_name creation
+        # flow, not this legacy shape (see children/tests/test_api.py and
+        # activity/tests/test_activity.py, which rely on this staying true).
+        r = self.client.post("/api/children/", {
+            "fullname": "Legacy Kid", "case_type": "Foster Care",
+        }, format="json")
+        self.assertEqual(r.status_code, 201)
