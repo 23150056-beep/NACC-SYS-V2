@@ -29,6 +29,7 @@ export default function Report() {
   const [q, setQ] = useState('');
   const [upload, setUpload] = useState(null); // upload drawer state (report or case study)
   const [error, setError] = useState('');
+  const [openChild, setOpenChild] = useState(null);
 
   const load = () => {
     api.get('/result-entries/').then((r) => setEntries(r.data)).catch(() => {});
@@ -45,6 +46,15 @@ export default function Report() {
     .filter((f) => (f.child_name || '').toLowerCase().includes(q.toLowerCase())), [files, q]);
   const visibleCaseStudies = useMemo(() => caseStudies
     .filter((f) => (f.child_name || '').toLowerCase().includes(q.toLowerCase())), [caseStudies, q]);
+
+  const grouped = useMemo(() => {
+    const map = new Map();
+    for (const e of visibleEntries) {
+      if (!map.has(e.child)) map.set(e.child, { child: e.child, child_name: e.child_name, entries: [] });
+      map.get(e.child).entries.push(e);
+    }
+    return [...map.values()].sort((a, b) => (a.child_name || '').localeCompare(b.child_name || ''));
+  }, [visibleEntries]);
 
   const download = async (f) => {
     try {
@@ -130,26 +140,44 @@ export default function Report() {
             <div className="racco-scroll" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse' }}>
                 <thead><tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                  {['Child', 'Instrument', 'Classification', 'Date', 'Entered By', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}
+                  {['Child', 'Entries', 'Latest Entry', 'Latest Classification', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {visibleEntries.map((e) => (
-                    <tr key={e.id} tabIndex={0} role="button" onClick={() => navigate(`/report/child/${e.child}`)}
-                      onKeyDown={(ev) => { if (ev.key === 'Enter') navigate(`/report/child/${e.child}`); }}
-                      style={{ borderBottom: '1px solid var(--ink-100)', cursor: 'pointer' }}
-                      onMouseEnter={(ev) => (ev.currentTarget.style.background = 'var(--blue-50)')}
-                      onMouseLeave={(ev) => (ev.currentTarget.style.background = 'transparent')}>
-                      <td style={{ padding: '12px 16px' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--blue-700)' }}>{e.child_name}</div>
-                        <div className="racco-mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{caseRef(e.child)}</div>
-                      </td>
-                      <td style={td}>{e.instrument_title || '—'}</td>
-                      <td style={{ ...td, fontWeight: 600, color: 'var(--text-strong)' }}>{e.classification || '—'}</td>
-                      <td style={td}>{e.date}</td>
-                      <td style={td}>{e.entered_by_name || '—'}</td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right' }}><Icon name="chevron-right" size={16} style={{ color: 'var(--text-faint)' }} /></td>
-                    </tr>
-                  ))}
+                  {grouped.map((g) => {
+                    const open = openChild === g.child;
+                    const latest = g.entries[0]; // visibleEntries already sorted newest-first
+                    return (
+                      <React.Fragment key={g.child}>
+                        <tr tabIndex={0} role="button" aria-expanded={open}
+                          onClick={() => setOpenChild(open ? null : g.child)}
+                          onKeyDown={(ev) => { if (ev.key === 'Enter') setOpenChild(open ? null : g.child); }}
+                          style={{ borderBottom: '1px solid var(--ink-100)', cursor: 'pointer' }}
+                          onMouseEnter={(ev) => (ev.currentTarget.style.background = 'var(--blue-50)')}
+                          onMouseLeave={(ev) => (ev.currentTarget.style.background = 'transparent')}>
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--blue-700)' }}>{g.child_name}</div>
+                            <div className="racco-mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{caseRef(g.child)}</div>
+                          </td>
+                          <td style={td}><Badge tone="brand" size="sm">{g.entries.length}</Badge></td>
+                          <td style={td}>{latest?.date || '—'}</td>
+                          <td style={{ ...td, fontWeight: 600, color: 'var(--text-strong)' }}>{latest?.classification || '—'}</td>
+                          <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                            <Icon name={open ? 'chevron-down' : 'chevron-right'} size={16} style={{ color: 'var(--text-faint)' }} />
+                          </td>
+                        </tr>
+                        {open && g.entries.map((e) => (
+                          <tr key={e.id} onClick={() => navigate(`/report/child/${e.child}`)}
+                            style={{ borderBottom: '1px solid var(--ink-100)', cursor: 'pointer', background: 'var(--ink-50)' }}>
+                            <td style={{ ...td, paddingLeft: 34, fontSize: 12.5 }}>{e.instrument_title || 'No instrument'}</td>
+                            <td style={td}></td>
+                            <td style={{ ...td, fontSize: 12.5 }}>{e.date}</td>
+                            <td style={{ ...td, fontSize: 12.5 }}>{e.classification || '—'}</td>
+                            <td style={{ ...td, fontSize: 12, color: 'var(--text-muted)', textAlign: 'right' }}>{e.entered_by_name || ''}</td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
