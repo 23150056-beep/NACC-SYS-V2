@@ -34,6 +34,7 @@
 12. **"Status has a function / add event" (adviser #13)**: appointment status actions (Completed / No-show / Cancel) ALREADY exist in the appointment detail modal — verified in code. The new part is calendar slot-click → prefilled booking form ("add event").
 13. **Consent embedding (adviser #9)** already exists (template document text renders in the wizard); the rework keeps it and adds the missing pieces: single flow (no On-file/Record-new toggle), consents table at the bottom, scan upload + in-app preview (the `ConsentRecord.scan` FileField already exists in the model, unused by the UI).
 14. **Records layout (follow-up request)**: the Records module's right-side drawers (detail + add/edit) become large CENTERED modals (~980px, two-column body) — only Records changes; other modules' drawers (Reports upload, Instruments, Schedule booking) stay as they are. Component names `ChildDrawer`/`ChildForm` are KEPT so every other task's instructions still apply — only their container and internal arrangement change.
+15. **Reliability trio (user-approved)**: duplicate/returning-child detection warns from BOTH active and archived records as staff type the name (staff see "ask an administrator to reopen" for archived matches — reopen stays admin-only per decision #7); one-click first booking lives on the record's next-session chips, defaulting purpose to Pre-Assessment when the child hasn't answered one yet; intake draft autosave is localStorage on the local workstation only (on-prem machine), cleared on successful save, discard, and logout.
 
 ---
 
@@ -1865,11 +1866,264 @@ git commit -m "feat(records): centered full-screen case modals replace side draw
 
 ---
 
+### Task 20: Duplicate / returning-child detection at intake
+
+**Files:**
+- Modify: `backend/children/views.py` (ChildViewSet), `frontend/src/pages/Children.jsx`
+- Test: append to `backend/children/tests/test_child_collab.py`
+
+**Interfaces:**
+- Consumes: T12 name parts, T4 reopen, T19 modal Identity section.
+- Produces: `GET /api/children/check-duplicate/?first_name=&last_name=&birth_date=` (Admin/Staff only) → `{"matches": [{id, fullname, status, birth_date, psychologist_name}]}` searching ALL records including archived, max 5.
+
+- [ ] **Step 1: Failing tests** — append:
+
+```python
+class DuplicateCheckTests(APITestCase):
+    def setUp(self):
+        self.staff = make_user("dc@t.ph", Role.STAFF)
+        self.psych = make_user("dp@t.ph", Role.PSYCHOLOGIST)
+        self.archived = Child.objects.create(
+            fullname="Mika R. Santos", first_name="Mika", last_name="Santos",
+            birth_date="2016-01-10", status=Child.INACTIVE)
+
+    def test_finds_archived_record(self):
+        self.client.force_authenticate(self.staff)
+        r = self.client.get("/api/children/check-duplicate/?first_name=mika&last_name=santos")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["matches"]), 1)
+        self.assertEqual(r.data["matches"][0]["status"], "inactive")
+
+    def test_birth_date_plus_last_name_matches(self):
+        self.client.force_authenticate(self.staff)
+        r = self.client.get("/api/children/check-duplicate/?last_name=santos&birth_date=2016-01-10")
+        self.assertEqual(len(r.data["matches"]), 1)
+
+    def test_psychologist_forbidden(self):
+        self.client.force_authenticate(self.psych)
+        r = self.client.get("/api/children/check-duplicate/?first_name=mika&last_name=santos")
+        self.assertEqual(r.status_code, 403)
+```
+
+- [ ] **Step 2: Run to verify failure** (404 — no route).
+
+- [ ] **Step 3: Backend.** In `ChildViewSet`:
+
+```python
+from django.db.models import Q as _Q  # if Q not already imported in this module
+
+    @action(detail=False, methods=["get"], url_path="check-duplicate")
+    def check_duplicate(self, request):
+        """Intake helper: does a record (active OR archived) already exist for
+        this child? Staff/Admin only — powers the 'reopen instead of
+        duplicating' warning on the Add Record form."""
+        role = getattr(getattr(request.user, "role", None), "role_name", None)
+        if role not in (Role.ADMINISTRATOR, Role.STAFF):
+            return Response({"detail": "Staff or administrators only."},
+                            status=status.HTTP_403_FORBIDDEN)
+        first = (request.query_params.get("first_name") or "").strip()
+        last = (request.query_params.get("last_name") or "").strip()
+        birth = (request.query_params.get("birth_date") or "").strip()
+        if not last:
+            return Response({"matches": []})
+        q = _Q(last_name__iexact=last) if not first else \
+            _Q(last_name__iexact=last, first_name__iexact=first)
+        if birth and not first:
+            q &= _Q(birth_date=birth)
+        elif not first:
+            return Response({"matches": []})  # last name alone is too broad
+        matches = Child.objects.filter(q).order_by("-updated_at")[:5]
+        return Response({"matches": [{
+            "id": c.id, "fullname": c.fullname, "status": c.status,
+            "birth_date": c.birth_date,
+            "psychologist_name": getattr(c.assigned_psychologist, "fullname", None),
+        } for c in matches]})
+```
+
+- [ ] **Step 4: Frontend.** In `ChildForm` (create mode only), debounce-check while typing — add near the top:
+
+```jsx
+const [dupes, setDupes] = useState([]);
+useEffect(() => {
+  if (form.id || !form.last_name?.trim() || !(form.first_name?.trim() || form.birth_date)) { setDupes([]); return; }
+  const t = setTimeout(() => {
+    const p = new URLSearchParams({ first_name: form.first_name || '', last_name: form.last_name, birth_date: form.birth_date || '' });
+    api.get(`/children/check-duplicate/?${p}`).then((r) => setDupes(r.data.matches || [])).catch(() => setDupes([]));
+  }, 600);
+  return () => clearTimeout(t);
+}, [form.first_name, form.last_name, form.birth_date, form.id]);
+```
+
+Render inside the Identity section, under the name grid, when `dupes.length > 0` (needs props: `isAdmin`, `onReopen(match)`, `onOpenExisting(match)` passed from `Children()`):
+
+```jsx
+<Alert tone="warning" icon={<Icon name="alert-triangle" size={18} />} title="A similar record already exists" style={{ gridColumn: '1 / -1' }}>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+    {dupes.map((m) => (
+      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <strong style={{ fontSize: 13 }}>{m.fullname}</strong>
+        <Badge tone={m.status === 'inactive' ? 'neutral' : 'success'} size="sm" dot>
+          {m.status === 'inactive' ? 'Archived (Terminated)' : 'Active'}
+        </Badge>
+        {m.birth_date && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>b. {m.birth_date}</span>}
+        {m.status === 'inactive'
+          ? (isAdmin
+              ? <Button variant="secondary" onClick={() => onReopen(m)} iconLeft={<Icon name="rotate-ccw" size={14} />}>Reopen this record instead</Button>
+              : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ask an administrator to reopen this archived record instead of creating a new one.</span>)
+          : <Button variant="secondary" onClick={() => onOpenExisting(m)} iconLeft={<Icon name="eye" size={14} />}>Open existing record</Button>}
+      </div>
+    ))}
+  </div>
+</Alert>
+```
+
+In `Children()`: `onReopen = async (m) => { await reopen({ id: m.id, fullname: m.fullname }); setForm(null); }` (reuse T5's `reopen`); `onOpenExisting = (m) => { setForm(null); const c = rows.find((r) => r.id === m.id); if (c) setSel(c); }`.
+
+- [ ] **Step 5:** Backend suite green; build; browser as staff: typing an archived child's name in Add Record shows the warning with the admin-hint; as admin the Reopen button reactivates the old record and closes the form.
+
+- [ ] **Step 6: Commit** — `feat(records): duplicate/returning-child detection with reopen shortcut at intake`
+
+---
+
+### Task 21: One-click first booking from the record
+
+**Files:**
+- Modify: `frontend/src/pages/Children.jsx` (`ChildDrawer` next-sessions block)
+
+**Interfaces:**
+- Consumes: T15's next-slots fetch in `ChildDrawer` and the existing `POST /api/appointments/` (capacity-validated server-side). Runs AFTER T15.
+
+- [ ] **Step 1:** In `ChildDrawer`, upgrade the T15 "Next possible sessions" badges into buttons with an inline confirm. Add state `const [pendingSlot, setPendingSlot] = useState(null); const [purpose, setPurpose] = useState(null); const [bookingBusy, setBookingBusy] = useState(false);` and default purpose from the child: `const defaultPurpose = child.pre_assessment_status === 'Answered' ? 'session' : 'pre_assessment';`
+
+Replace the slot badges with:
+
+```jsx
+<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+  {slots.slots.map((s, i) => (
+    <button key={i} type="button" onClick={() => { setPendingSlot(s); setPurpose(defaultPurpose); }}
+      style={{ padding: '5px 11px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--success-100)', background: 'var(--success-50)', color: 'var(--success-600)', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 11.5, cursor: 'pointer' }}>
+      {s.weekday.slice(0, 3)} {s.date.slice(5)} · {s.start}–{s.end}
+    </button>
+  ))}
+</div>
+{pendingSlot && (
+  <div style={{ marginTop: 10, padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', display: 'flex', flexDirection: 'column', gap: 9 }}>
+    <span style={{ fontSize: 12.5, color: 'var(--text-strong)', fontWeight: 600 }}>
+      Book {child.fullname} with {slots.psychologist} — {pendingSlot.weekday} {pendingSlot.date} at {pendingSlot.start}?
+    </span>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <Select value={purpose} onChange={(e) => setPurpose(e.target.value)} style={{ maxWidth: 180 }}>
+        <option value="pre_assessment">Pre-Assessment</option>
+        <option value="session">Session</option>
+        <option value="follow_up">Follow-up</option>
+      </Select>
+      <Button variant="primary" disabled={bookingBusy} onClick={bookSlot} iconLeft={<Icon name="calendar" size={15} />}>Book</Button>
+      <Button variant="ghost" onClick={() => setPendingSlot(null)}>Cancel</Button>
+    </div>
+  </div>
+)}
+```
+
+With the handler (needs `toast` — `useToast()` inside `ChildDrawer` — and the slots re-fetch from T15 extracted into a `loadSlots()` it can call again):
+
+```jsx
+const bookSlot = async () => {
+  setBookingBusy(true);
+  try {
+    await api.post('/appointments/', {
+      child: child.id, psychologist: child.psychologist,
+      start: `${pendingSlot.date}T${pendingSlot.start}:00`,
+      duration_minutes: 60, purpose, notes: '',
+    });
+    toast.success(`Booked — ${pendingSlot.weekday} ${pendingSlot.date} at ${pendingSlot.start}`);
+    setPendingSlot(null);
+    loadSlots();
+  } catch (err) {
+    const d = err.response?.data;
+    toast.error(d?.start || d?.psychologist || d?.detail || 'Could not book this slot.');
+  } finally { setBookingBusy(false); }
+};
+```
+
+- [ ] **Step 2:** Build; browser: assign a psychologist with availability, open the child's record, click a slot chip → confirm → appointment appears on `/schedule` and the slot's remaining count drops on re-open; booking a full slot surfaces the server's capacity error as a toast.
+
+- [ ] **Step 3: Commit** — `feat(records): one-click first booking from the child's next-session slots`
+
+---
+
+### Task 22: Intake draft autosave (never lose a half-typed record)
+
+**Files:**
+- Modify: `frontend/src/pages/Children.jsx`, `frontend/src/context/AuthContext.jsx` (logout cleanup)
+
+**Interfaces:** Create-mode only (edits live server-side). Draft key: `nacc-child-draft:<userId>` in localStorage — the on-prem workstation only; cleared on save, discard, and logout.
+
+- [ ] **Step 1:** In `Children()`:
+
+```jsx
+const draftKey = `nacc-child-draft:${user?.id ?? 'anon'}`;
+
+const openCreate = () => {
+  setError('');
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(draftKey) || 'null'); } catch { /* corrupt draft */ }
+  const meaningful = draft && Object.entries(draft).some(([k, v]) => k !== 'assignee_sees_history' && v);
+  setForm({ ...EMPTY, _draft: meaningful ? draft : null });
+};
+```
+
+In `save()`, also `delete payload._draft;` and on success `localStorage.removeItem(draftKey);`. Pass `draftKey` to `<ChildForm draftKey={draftKey} ... />`.
+
+- [ ] **Step 2:** In `ChildForm`, autosave (debounced) + restore banner:
+
+```jsx
+useEffect(() => {
+  if (form.id) return; // edits are server-backed; drafts are create-only
+  const t = setTimeout(() => {
+    const { _draft, _conflict, ...data } = form;
+    if (Object.entries(data).some(([k, v]) => k !== 'assignee_sees_history' && v)) {
+      try { localStorage.setItem(draftKey, JSON.stringify(data)); } catch { /* storage full */ }
+    }
+  }, 500);
+  return () => clearTimeout(t);
+}, [form, draftKey]);
+```
+
+Banner at the top of the modal body when `form._draft`:
+
+```jsx
+{form._draft && (
+  <Alert tone="info" icon={<Icon name="history" size={18} />} title="Unsaved draft found" style={{ marginBottom: 4 }}>
+    You started a record earlier that wasn’t saved. Continue where you left off?
+    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+      <Button variant="secondary" onClick={() => setForm({ ...EMPTY, ...form._draft, _draft: null })} iconLeft={<Icon name="rotate-ccw" size={14} />}>Restore draft</Button>
+      <Button variant="ghost" onClick={() => { localStorage.removeItem(draftKey); setForm((f) => ({ ...f, _draft: null })); }}>Discard</Button>
+    </div>
+  </Alert>
+)}
+```
+
+(`EMPTY` must be importable inside `ChildForm` — it's module-scope in Children.jsx already. If the `history` icon name doesn't exist in the Icon set, use `rotate-ccw`.)
+
+- [ ] **Step 3: Logout cleanup.** In `frontend/src/context/AuthContext.jsx`, find the `logout` function and add before/after token clearing:
+
+```jsx
+Object.keys(localStorage)
+  .filter((k) => k.startsWith('nacc-child-draft:'))
+  .forEach((k) => localStorage.removeItem(k));
+```
+
+- [ ] **Step 4:** Build; browser: type half a record, close the modal, reopen Add Record → banner offers the draft; Restore brings every field back; saving clears it (reopen shows no banner); logging out clears it.
+
+- [ ] **Step 5: Commit** — `feat(records): intake draft autosave with restore banner`
+
+---
+
 ## Self-Review (done at plan time)
 
 - **Spec coverage (first batch):** psychologist edits assigned child → T1/T3; multidisciplinary "Google-Docs-like" collab → T2/T3 (scoped decision #1); calendar off sidebar + dashboard mini widget + click-to-fullscreen → T10; bento no-scroll dashboard + per-module scrolling → T10; grouped result entries per child → T9; terminated records archived for admin + reuse when a child returns → T4/T5; Previous Custodian / Address / Recommendation → T6; instrument module inside pre-assessment step 4 → T7/T8; new instrument title lists (children + PAP) → T7; ethical-consideration check → answered in chat + hardening T11.
 - **Spec coverage (adviser suggestions 1–13):** #1 name split → T12; #2 age 5–17 + required `*` → T13; #3 specific labels (Educational Placement, Place of Recovery) → T13; #4 LIFO records → T14; #5 weekday checkboxes → T15 step 4; #6 assigned child's next counseling slots → T15 steps 3/5/6; #7 staff sees psychologist availability → T15 step 6 (already works, verify); #8 clickable notifications → T16; #9 embedded readable consent → T17 (document text already renders; kept front-and-center); #10 remove Record New / On file toggle → T17; #11 consents in a bottom table → T17; #12 consent file preview → T17; #13 status function / add event → T15 step 5 (status actions already exist; slot-click booking added).
-- **Spec coverage (follow-up requests):** availability visible BEFORE assigning a psychologist on the child record form → T18 (frontend-only; staff already have read access to all availability blocks); Records detail/edit as centered full-screen modals instead of side drawers → T19 (decision #14).
+- **Spec coverage (follow-up requests):** availability visible BEFORE assigning a psychologist on the child record form → T18 (frontend-only; staff already have read access to all availability blocks); Records detail/edit as centered full-screen modals instead of side drawers → T19 (decision #14); user-approved reliability trio → T20 duplicate/returning-child detection, T21 one-click first booking, T22 intake draft autosave (decision #15).
 - **Known ambiguities intentionally flagged:** decisions #1–#13 at the top; confirm with the user before executing if any look wrong.
 - **Type consistency:** `expected_updated_at` (write-only, ISO string) and `updated_at` (read-only) used consistently across T1–T3; `terminations` list shape identical in T4 backend and T5 frontend; `audience` values `child|adoptive_parent|both` identical in T7 model, seed, and T8 filters; `InstrumentFormDrawer` props match both call sites; `next-slots` response shape identical in T15 backend, Schedule hints, and Children drawer; `has_scan`/`scan_filename`/`download` consistent between T17 backend and ConsentStep; T12's name-lock `validate()` REPLACES T1's fullname-only check (implement T1's version first, extend it in T12).
-- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T12→T13 sequential (validation builds on name parts). `Children.jsx` is touched by T3, T5, T6, T12, T13, T14, T15-step-6 — run those serially, never in parallel subagents. `PreAssessment.jsx` is touched by T8 and T17 — serialize. `Schedule.jsx`/`Topbar.jsx`/`Dashboard.jsx` overlap across T10, T15, T16 — serialize T10→T15→T16. Do T10 last among dashboard tasks if the in-flight Sidebar change hasn't landed yet. T18 and T19 also touch `Children.jsx` — include them in that serial chain; run T19 (layout) right after T3 so the later Children tasks land inside the new modal regions. Suggested overall order: T1, T2, T3, T19, T4, T5, T6, T12, T13, T14, T18, T7, T8, T17, T9, T10, T15, T16, T11.
+- **Execution order:** T1→T2→T3 sequential; T4→T5 sequential; T7→T8 sequential; T12→T13 sequential (validation builds on name parts). `Children.jsx` is touched by T3, T5, T6, T12, T13, T14, T15-step-6 — run those serially, never in parallel subagents. `PreAssessment.jsx` is touched by T8 and T17 — serialize. `Schedule.jsx`/`Topbar.jsx`/`Dashboard.jsx` overlap across T10, T15, T16 — serialize T10→T15→T16. Do T10 last among dashboard tasks if the in-flight Sidebar change hasn't landed yet. T18–T22 also touch `Children.jsx` — include them in that serial chain; run T19 (layout) right after T3 so the later Children tasks land inside the new modal regions. T20 needs T12 (name parts) and T4 (reopen); T21 needs T15 (next-slots in the drawer); T22 is independent. Suggested overall order: T1, T2, T3, T19, T4, T5, T6, T12, T13, T14, T18, T20, T22, T7, T8, T17, T9, T10, T15, T21, T16, T11.
