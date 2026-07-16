@@ -26,25 +26,25 @@ export default function MiniCalendar({ appointments = [], onOpen }) {
   const nav = (n) => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + n, 1));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, cursor: 'pointer' }}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer' }}
       role="button" tabIndex={0} title="Open the full calendar"
       onClick={onOpen} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <button aria-label="Previous month" onClick={(e) => { e.stopPropagation(); nav(-1); }}
-          style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Icon name="chevron-left" size={16} /></button>
-        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, color: 'var(--text-strong)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}><Icon name="chevron-left" size={15} /></button>
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12.5, color: 'var(--text-strong)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           {cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-          <Icon name="maximize-2" size={11} style={{ color: 'var(--blue-500)' }} />
+          <Icon name="maximize-2" size={10} style={{ color: 'var(--blue-500)' }} />
         </span>
         <button aria-label="Next month" onClick={(e) => { e.stopPropagation(); nav(1); }}
-          style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Icon name="chevron-right" size={16} /></button>
+          style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}><Icon name="chevron-right" size={15} /></button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, textAlign: 'center' }}>
-        {DOW.map((d) => <span key={d} style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-faint)', letterSpacing: '0.04em' }}>{d}</span>)}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1, textAlign: 'center' }}>
+        {DOW.map((d) => <span key={d} style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--text-faint)', letterSpacing: '0.04em' }}>{d}</span>)}
         {cells.map((d, i) => d === null ? <span key={`x${i}`} /> : (
           <span key={key(d)} style={{
-            position: 'relative', fontSize: 11.5, fontWeight: key(d) === today ? 800 : 600,
-            padding: '3px 0', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)',
+            position: 'relative', fontSize: 11, fontWeight: key(d) === today ? 800 : 600,
+            padding: '2px 0', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)',
             background: key(d) === today ? 'var(--blue-600)' : 'transparent',
             color: key(d) === today ? '#fff' : 'var(--text-body)',
           }}>

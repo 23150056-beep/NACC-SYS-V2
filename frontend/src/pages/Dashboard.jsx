@@ -73,30 +73,60 @@ export default function Dashboard() {
   ].filter((a) => a.roles.includes(role));
 
   return (
-    <div style={{ padding: '18px 22px', height: 'calc(100vh - var(--topbar-h, 64px))', display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden auto' }}>
+    <div style={{ padding: '14px 20px', height: 'calc(100vh - var(--topbar-h, 64px))', display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden auto' }}>
       {/* Row 1 — slim quick actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 'none' }}>
-        <span style={{ width: 30, height: 30, borderRadius: 'var(--radius-md)', background: m.soft, color: m.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="sparkles" size={16} /></span>
-        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, color: 'var(--text-strong)', marginRight: 4 }}>Quick actions</span>
+        <span style={{ width: 28, height: 28, borderRadius: 'var(--radius-md)', background: m.soft, color: m.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="sparkles" size={15} /></span>
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 14, color: 'var(--text-strong)', marginRight: 4 }}>Quick actions</span>
         {actions.map((a) => (
           <Button key={a.label} variant={a.variant} onClick={() => navigate(a.to)} iconLeft={<Icon name={a.icon} size={16} />}>{a.label}</Button>
         ))}
       </div>
 
       {/* Row 2 — census stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 14, flex: 'none' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, flex: 'none' }}>
         <StatCard label={isPsychologist ? 'My Active Cases' : 'Active Children'} value={census.active} tone="success" icon={<Icon name="users" size={18} />} />
         <StatCard label="In Counseling" value={(census.by_case_status || {}).counseling || 0} tone="brand" icon={<Icon name="heart-pulse" size={18} />} hint={`${(census.by_case_status || {}).pre_assessment || 0} in pre-assessment`} />
         <StatCard label="Inactive (Terminated)" value={census.inactive} tone="brand" icon={<Icon name="archive" size={18} />} />
         <StatCard label="Pending Pre-Assessments" value={stats.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} hint={stats.unassessed ? `${stats.unassessed} not yet assessed` : undefined} />
       </div>
 
-      {/* Bento body — two rows, tiles scroll internally. Row 2 (Census chart)
-          gets more height than row 1 (list/calendar tiles, which tolerate
-          internal scroll far more gracefully than a bar chart does) so the
-          Intake vs. termination chart + case-mix badges are always fully
-          visible without scrolling. */}
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gap: 14, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,0.95fr) minmax(0,1.05fr)' }}>
+      {/* Bento body — three rows. Census gets its own full-width row at the
+          top so the Intake vs. termination chart + case-mix badges are
+          unmistakably the dashboard's most prominent element and are never
+          clipped or scrolled — the remaining five tiles are compacted into
+          two denser rows below, which tolerate internal scroll far more
+          gracefully than a bar chart or a month grid being cut off. */}
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,1fr) minmax(0,1.25fr) minmax(0,0.75fr)' }}>
+        {/* Intake vs. termination — full width, top priority */}
+        <Tile eyebrow="Census" title="Intake vs. termination" span={4}>
+          {stats.intake_vs_termination.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No intake activity yet.</div>
+          ) : (
+            <div style={{ display: 'flex', height: '100%', gap: 14 }}>
+              <div style={{ flex: '1 1 auto', minWidth: 0, minHeight: 110 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.intake_vs_termination}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="intake" name="Intake" fill="var(--blue-600)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="terminations" name="Terminations" fill="var(--amber-500)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {caseMix.length > 0 && (
+                <div style={{ flex: '0 0 180px', paddingLeft: 14, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
+                  <span className="racco-eyebrow" style={{ fontSize: 10 }}>Active case mix</span>
+                  {caseMix.map(([type, n]) => <Badge key={type} tone="success" size="sm" dot>{type} — {n}</Badge>)}
+                </div>
+              )}
+            </div>
+          )}
+        </Tile>
+
         {/* Today's schedule strip (athena scheduling-tile pattern) */}
         <Tile eyebrow="Today" title="Schedule" span={2}>
           {stats.today_schedule.length === 0 ? (
@@ -138,10 +168,10 @@ export default function Dashboard() {
               <Icon name="check-circle-2" size={16} /> No gaps detected.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {gaps.map((g, i) => (
                 <button key={i} onClick={() => navigate(`/report/child/${g.child_id}`)}
-                  style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 11px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
+                  style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '7px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-50)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface)')}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 5, flex: 'none', background: GAP_TONE[g.severity] || 'var(--blue-400)' }} />
@@ -155,42 +185,14 @@ export default function Dashboard() {
           )}
         </Tile>
 
-        {/* Intake vs. termination */}
-        <Tile eyebrow="Census" title="Intake vs. termination" span={2}>
-          {stats.intake_vs_termination.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No intake activity yet.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 12 }}>
-              <div style={{ flex: 1, minHeight: 150 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.intake_vs_termination}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="intake" name="Intake" fill="var(--blue-600)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="terminations" name="Terminations" fill="var(--amber-500)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              {caseMix.length > 0 && (
-                <div style={{ flex: 'none', paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {caseMix.map(([type, n]) => <Badge key={type} tone="success" size="sm" dot>Active · {type} — {n}</Badge>)}
-                </div>
-              )}
-            </div>
-          )}
-        </Tile>
-
         {/* Sessions by psychologist */}
-        <Tile eyebrow="Clinical team" title="Sessions by psychologist">
+        <Tile eyebrow="Clinical team" title="Sessions by psychologist" span={2}>
           {(stats.per_psychologist || []).length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No completed sessions yet.</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {stats.per_psychologist.map((p) => (
-                <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
+                <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-strong)' }}>{p.name}</span>
                   <span className="racco-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue-600)' }}>{p.count}</span>
                 </div>
@@ -198,8 +200,8 @@ export default function Dashboard() {
             </div>
           )}
           {(stats.counseling_per_psychologist || []).length > 0 && (
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Cases in counseling</div>
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+              <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Cases in counseling</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {stats.counseling_per_psychologist.map((p) => (
                   <Badge key={p.name} tone="brand" size="sm" dot>{p.name} · {p.count}</Badge>
@@ -210,7 +212,7 @@ export default function Dashboard() {
         </Tile>
 
         {/* Activity feed */}
-        <Tile eyebrow="Live" title="Activity Feed">
+        <Tile eyebrow="Live" title="Activity Feed" span={2}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {feed.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '8px 0' }}>No recent activity.</div>
