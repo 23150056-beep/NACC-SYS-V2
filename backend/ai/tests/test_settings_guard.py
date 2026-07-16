@@ -34,12 +34,18 @@ class OllamaUrlGuardTests(APITestCase):
     def test_unchanged_remote_url_does_not_block_unrelated_save(self):
         # Simulate a pre-existing remote config (legitimate at the time it was
         # set, before this guard existed) - an unrelated field change must not
-        # be blocked by re-validating a URL nobody is touching.
+        # be blocked by re-validating a URL nobody is touching. The frontend
+        # always resends the full object on save, so ollama_url MUST be in
+        # the payload here (unchanged) to actually exercise the skip-when-
+        # unchanged branch - omitting it would let DRF's partial-update
+        # field-skipping pass the test regardless of whether the fix exists.
         from ai.models import AISetting
         setting = AISetting.load()
         setting.ollama_url = "http://203.0.113.5:11434"
         setting.save()
-        r = self.client.patch("/api/ai/settings/", {"enabled": True}, format="json")
+        r = self.client.patch("/api/ai/settings/", {
+            "ollama_url": "http://203.0.113.5:11434", "enabled": True,
+        }, format="json")
         self.assertEqual(r.status_code, 200)
 
     def test_changing_away_from_a_stale_remote_url_still_requires_loopback(self):
