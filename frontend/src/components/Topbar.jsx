@@ -35,6 +35,16 @@ export function eventText(e) {
   const type = (e.entity_type || '').toLowerCase();
   return `${verb} ${type}${e.entity_label ? ` ${e.entity_label}` : ''}`.trim();
 }
+export function eventDestination(e, role) {
+  const type = (e.entity_type || '').toLowerCase();
+  if (type === 'child') return e.entity_id ? `/report/child/${e.entity_id}` : '/children';
+  if (type === 'guardian') return '/children';
+  if (type === 'appointment' || type === 'availabilityblock') return '/schedule';
+  if (['instrumentcatalog', 'instrument', 'agencyformtemplate', 'questionnaire'].includes(type)) return '/instruments';
+  if (e.category === 'user' || e.category === 'security' || type === 'user')
+    return role === 'Administrator' ? '/users' : '/';
+  return '/';
+}
 export function timeAgo(iso) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return 'just now';
@@ -147,9 +157,11 @@ export default function Topbar() {
                 ) : shownEvents.map((n, i) => {
                   const meta = ACTION_META[n.action] || ACTION_META.created;
                   return (
-                    <div
+                    <button
                       key={n.id ?? i} role="menuitem"
-                      style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 11, padding: '12px 16px', borderBottom: i < shownEvents.length - 1 ? '1px solid var(--ink-100)' : 'none' }}
+                      onClick={() => { setNotifOpen(false); navigate(eventDestination(n, role)); }}
+                      {...hoverTint('var(--blue-50)')}
+                      style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 11, padding: '12px 16px', borderBottom: i < shownEvents.length - 1 ? '1px solid var(--ink-100)' : 'none', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
                     >
                       <span style={{ width: 26, height: 26, borderRadius: '50%', flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ink-50)', color: meta.color }}>
                         <Icon name={meta.icon} size={14} />
@@ -158,7 +170,7 @@ export default function Topbar() {
                         <span style={{ display: 'block', fontSize: 13, color: 'var(--text-strong)', fontWeight: 600, lineHeight: 1.4 }}>{eventText(n)}</span>
                         <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-faint)', marginTop: 2 }}>{n.actor_label} · {timeAgo(n.created_at)}</span>
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
