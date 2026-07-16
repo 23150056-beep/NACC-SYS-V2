@@ -34,13 +34,22 @@ class AISettingSerializer(serializers.ModelSerializer):
     def validate_ollama_url(self, value):
         # DPA compliance depends on the AI runtime staying on this machine —
         # reject non-loopback hosts unless the server env explicitly opts in.
-        host = (urlparse(value).hostname or "").lower()
-        if host in ("localhost", "127.0.0.1", "::1") or django_settings.ALLOW_REMOTE_OLLAMA:
-            return value
-        raise serializers.ValidationError(
-            "AI must run on this machine (Data Privacy Act commitment). "
-            "Use http://localhost:11434, or set ALLOW_REMOTE_OLLAMA=true in the "
-            "server environment if the agency knowingly hosts Ollama elsewhere on-premises.")
+        # Re-validation is CHANGE-only: the frontend's settings form always
+        # resends the whole `ai` object on every save (full-object update
+        # pattern), so re-checking an untouched ollama_url on every unrelated
+        # save would permanently lock out settings changes for any agency
+        # that legitimately configured a remote Ollama host before this
+        # guard existed. Only enforce the loopback restriction when the
+        # value is genuinely changing (or there's no instance yet).
+        if self.instance is None or value != self.instance.ollama_url:
+            host = (urlparse(value).hostname or "").lower()
+            if host in ("localhost", "127.0.0.1", "::1") or django_settings.ALLOW_REMOTE_OLLAMA:
+                return value
+            raise serializers.ValidationError(
+                "AI must run on this machine (Data Privacy Act commitment). "
+                "Use http://localhost:11434, or set ALLOW_REMOTE_OLLAMA=true in the "
+                "server environment if the agency knowingly hosts Ollama elsewhere on-premises.")
+        return value
 
 
 class AISettingView(generics.RetrieveUpdateAPIView):

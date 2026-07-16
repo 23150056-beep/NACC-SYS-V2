@@ -30,9 +30,15 @@ export default function Settings() {
       }
       toast.success('Settings saved');
     } catch (err) {
-      toast.error(err.response?.status === 403
-        ? 'Only an Administrator can change these settings.'
-        : 'Could not save settings. Please try again.');
+      if (err.response?.status === 403) {
+        toast.error('Only an Administrator can change these settings.');
+      } else {
+        // DRF validation errors come back keyed by field name (e.g.
+        // { ollama_url: ["AI must run on this machine..."] }) — surface the
+        // specific message instead of a generic one when present.
+        const fieldError = err.response?.data?.ollama_url?.[0];
+        toast.error(fieldError || 'Could not save settings. Please try again.');
+      }
     }
   };
 
