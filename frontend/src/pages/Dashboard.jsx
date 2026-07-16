@@ -93,18 +93,42 @@ export default function Dashboard() {
 
       {/* Bento body — three rows. Census gets its own full-width row at the
           top so the Intake vs. termination chart + case-mix badges are
-          unmistakably the dashboard's most prominent element and are never
-          clipped or scrolled — the remaining five tiles are compacted into
-          two denser rows below, which tolerate internal scroll far more
-          gracefully than a bar chart or a month grid being cut off. */}
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,1fr) minmax(0,1.25fr) minmax(0,0.75fr)' }}>
+          unmistakably the dashboard's most prominent element — the
+          remaining five tiles compact into two denser rows below.
+
+          Each row has a real pixel floor (via minmax(Npx, …fr)), and the
+          grid is NOT forced to minHeight:0 — its natural min-height is the
+          sum of those floors. On a tall window the flex:1/fr weighting
+          still lets it grow to fill the screen with no page scroll (as
+          verified at 1440x900); on a short window (a maximized Chrome
+          window on a 1366x768 laptop typically leaves well under 700px of
+          actual content height once the tab/address bars and taskbar are
+          subtracted) the grid can no longer be crushed below the point
+          where a bar chart stops rendering or a calendar becomes unusable
+          — the page scrolls instead, which is a far better failure mode
+          than invisible charts or badly clipped tiles.
+
+          The floor lives on the GRID CONTAINER (minHeight:580px), not on
+          individual rows: per-row px floors (minmax(180px,1.1fr) etc.)
+          turned out to distort the fr distribution unpredictably once a
+          row's floor exceeds its proportional fr share — measured on a
+          real browser, that produced WORSE per-tile fits than plain fr
+          weights despite an identical total pool. Plain `minmax(0,Nfr)`
+          rows plus one minHeight on the container reproduces the exact
+          1:1.25:0.75 proportions already verified to fit every tile with
+          zero clipping at a 596px pool, while still giving `fr` a
+          definite number to resolve against on short screens (container
+          clamped to 580px) instead of falling back to unclipped
+          max-content sizing, which is what broke chart rendering
+          entirely on short windows before this fix. */}
+      <div style={{ flex: 1, minHeight: 580, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,1fr) minmax(0,1.25fr) minmax(0,0.75fr)' }}>
         {/* Intake vs. termination — full width, top priority */}
         <Tile eyebrow="Census" title="Intake vs. termination" span={4}>
           {stats.intake_vs_termination.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No intake activity yet.</div>
           ) : (
             <div style={{ display: 'flex', height: '100%', gap: 14 }}>
-              <div style={{ flex: '1 1 auto', minWidth: 0, minHeight: 110 }}>
+              <div style={{ flex: '1 1 auto', minWidth: 0, minHeight: 120 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.intake_vs_termination}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
