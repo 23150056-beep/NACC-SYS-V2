@@ -308,6 +308,7 @@ export default function Children() {
 }
 
 function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [], onEdit, onTerminate, onReopen, onClose }) {
+  const toast = useToast();
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -323,6 +324,28 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
     api.get(`/availability/next-slots/?child=${child.id}`).then((r) => setSlots(r.data)).catch(() => setSlots(null));
   };
   useEffect(() => { loadSlots(); /* eslint-disable-next-line */ }, [child.id, child.status, child.psychologist_name]);
+  // One-click first booking — clicking a suggested slot opens an inline
+  // confirm (purpose + Book/Cancel) instead of navigating to /schedule.
+  const [pendingSlot, setPendingSlot] = useState(null);
+  const [purpose, setPurpose] = useState(null);
+  const [bookingBusy, setBookingBusy] = useState(false);
+  const defaultPurpose = child.pre_assessment_status === 'Answered' ? 'session' : 'pre_assessment';
+  const bookSlot = async () => {
+    setBookingBusy(true);
+    try {
+      await api.post('/appointments/', {
+        child: child.id, psychologist: child.psychologist,
+        start: `${pendingSlot.date}T${pendingSlot.start}:00`,
+        duration_minutes: 60, purpose, notes: '',
+      });
+      toast.success(`Booked — ${pendingSlot.weekday} ${pendingSlot.date} at ${pendingSlot.start}`);
+      setPendingSlot(null);
+      loadSlots();
+    } catch (err) {
+      const d = err.response?.data;
+      toast.error(d?.start || d?.psychologist || d?.detail || 'Could not book this slot.');
+    } finally { setBookingBusy(false); }
+  };
   const location = [child.barangay, child.municipality, child.province].filter(Boolean).join(', ') || child.address || '—';
   const showReopen = isAdmin && child.status === 'inactive';
   const hasRecommendationContent = child.recommendation || child.referral_source || child.education_level || child.current_placement;
@@ -419,8 +442,29 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
                 <div>
                   <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Next possible sessions — {slots.psychologist}</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {slots.slots.map((s, i) => <Badge key={i} tone="success" size="sm" dot>{s.weekday.slice(0, 3)} {s.date.slice(5)} · {s.start}–{s.end}</Badge>)}
+                    {slots.slots.map((s, i) => (
+                      <button key={i} type="button" onClick={() => { setPendingSlot(s); setPurpose(defaultPurpose); }}
+                        style={{ padding: '5px 11px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--success-100)', background: 'var(--success-50)', color: 'var(--success-600)', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 11.5, cursor: 'pointer' }}>
+                        {s.weekday.slice(0, 3)} {s.date.slice(5)} · {s.start}–{s.end}
+                      </button>
+                    ))}
                   </div>
+                  {pendingSlot && (
+                    <div style={{ marginTop: 10, padding: '11px 13px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      <span style={{ fontSize: 12.5, color: 'var(--text-strong)', fontWeight: 600 }}>
+                        Book {child.fullname} with {slots.psychologist} — {pendingSlot.weekday} {pendingSlot.date} at {pendingSlot.start}?
+                      </span>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Select value={purpose} onChange={(e) => setPurpose(e.target.value)} style={{ maxWidth: 180 }}>
+                          <option value="pre_assessment">Pre-Assessment</option>
+                          <option value="session">Session</option>
+                          <option value="follow_up">Follow-up</option>
+                        </Select>
+                        <Button variant="primary" disabled={bookingBusy} onClick={bookSlot} iconLeft={<Icon name="calendar" size={15} />}>Book</Button>
+                        <Button variant="ghost" onClick={() => setPendingSlot(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
