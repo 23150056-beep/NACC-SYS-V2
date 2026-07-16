@@ -1,5 +1,7 @@
 from datetime import timedelta
+from urllib.parse import urlparse
 
+from django.conf import settings as django_settings
 from django.db.models import Avg, Count
 from django.utils import timezone
 from rest_framework import generics, status, serializers
@@ -28,6 +30,17 @@ class AISettingSerializer(serializers.ModelSerializer):
         fields = ["enabled", "feature_brief", "feature_doc_intelligence",
                   "feature_remark_polish", "feature_census_narrative",
                   "ollama_url", "model_name", "updated_at"]
+
+    def validate_ollama_url(self, value):
+        # DPA compliance depends on the AI runtime staying on this machine —
+        # reject non-loopback hosts unless the server env explicitly opts in.
+        host = (urlparse(value).hostname or "").lower()
+        if host in ("localhost", "127.0.0.1", "::1") or django_settings.ALLOW_REMOTE_OLLAMA:
+            return value
+        raise serializers.ValidationError(
+            "AI must run on this machine (Data Privacy Act commitment). "
+            "Use http://localhost:11434, or set ALLOW_REMOTE_OLLAMA=true in the "
+            "server environment if the agency knowingly hosts Ollama elsewhere on-premises.")
 
 
 class AISettingView(generics.RetrieveUpdateAPIView):

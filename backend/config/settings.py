@@ -149,3 +149,10 @@ LOGIN_LOCKOUT_MINUTES = 15   # both the rolling counting window and the lock dur
 CORS_ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
 ).split(",")
+
+# Privacy hardening: the Data Privacy Act compliance story depends on the AI
+# runtime staying on this machine ("data never leaves the building"). The
+# Ollama endpoint URL is admin-editable in Settings, so we reject non-loopback
+# hosts by default. Only set this to true if the agency knowingly hosts
+# Ollama elsewhere on its own on-premises network.
+ALLOW_REMOTE_OLLAMA = os.getenv("ALLOW_REMOTE_OLLAMA", "false").lower() == "true"
