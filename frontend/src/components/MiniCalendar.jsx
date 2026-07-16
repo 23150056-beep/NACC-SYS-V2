@@ -26,14 +26,15 @@ export default function MiniCalendar({ appointments = [], onOpen }) {
   const nav = (n) => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + n, 1));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, cursor: 'pointer' }}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, cursor: 'pointer' }}
       role="button" tabIndex={0} title="Open the full calendar"
       onClick={onOpen} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <button aria-label="Previous month" onClick={(e) => { e.stopPropagation(); nav(-1); }}
           style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Icon name="chevron-left" size={16} /></button>
-        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13.5, color: 'var(--text-strong)' }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, color: 'var(--text-strong)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           {cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+          <Icon name="maximize-2" size={11} style={{ color: 'var(--blue-500)' }} />
         </span>
         <button aria-label="Next month" onClick={(e) => { e.stopPropagation(); nav(1); }}
           style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Icon name="chevron-right" size={16} /></button>
@@ -43,7 +44,7 @@ export default function MiniCalendar({ appointments = [], onOpen }) {
         {cells.map((d, i) => d === null ? <span key={`x${i}`} /> : (
           <span key={key(d)} style={{
             position: 'relative', fontSize: 11.5, fontWeight: key(d) === today ? 800 : 600,
-            padding: '4px 0', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)',
+            padding: '3px 0', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)',
             background: key(d) === today ? 'var(--blue-600)' : 'transparent',
             color: key(d) === today ? '#fff' : 'var(--text-body)',
           }}>
@@ -51,9 +52,6 @@ export default function MiniCalendar({ appointments = [], onOpen }) {
             {marked.has(key(d)) && <span style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 0, width: 4, height: 4, borderRadius: '50%', background: key(d) === today ? '#fff' : 'var(--blue-500)' }} />}
           </span>
         ))}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--blue-600)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-        <Icon name="maximize-2" size={12} /> Click to open the full calendar
       </div>
     </div>
   );

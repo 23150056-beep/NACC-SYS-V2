@@ -31,11 +31,11 @@ const Tile = ({ eyebrow, title, span = 1, children, style = {} }) => (
     boxShadow: 'var(--shadow-sm)', overflow: 'hidden', position: 'relative',
     gridColumn: `span ${span}`, minHeight: 0, display: 'flex', flexDirection: 'column', ...style,
   }}>
-    <div style={{ flex: 'none', padding: '16px 16px 0' }}>
-      {eyebrow && <div className="racco-eyebrow" style={{ marginBottom: 4 }}>{eyebrow}</div>}
+    <div style={{ flex: 'none', padding: '13px 14px 0' }}>
+      {eyebrow && <div className="racco-eyebrow" style={{ marginBottom: 3 }}>{eyebrow}</div>}
       {title && <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-strong)', margin: 0 }}>{title}</h3>}
     </div>
-    <div className="racco-scroll" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 16 }}>
+    <div className="racco-scroll" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 14 }}>
       {children}
     </div>
   </div>
@@ -91,8 +91,12 @@ export default function Dashboard() {
         <StatCard label="Pending Pre-Assessments" value={stats.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} hint={stats.unassessed ? `${stats.unassessed} not yet assessed` : undefined} />
       </div>
 
-      {/* Bento body — two fixed rows, tiles scroll internally */}
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gap: 14, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,1fr) minmax(0,1fr)' }}>
+      {/* Bento body — two rows, tiles scroll internally. Row 2 (Census chart)
+          gets more height than row 1 (list/calendar tiles, which tolerate
+          internal scroll far more gracefully than a bar chart does) so the
+          Intake vs. termination chart + case-mix badges are always fully
+          visible without scrolling. */}
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', gap: 14, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,0.95fr) minmax(0,1.05fr)' }}>
         {/* Today's schedule strip (athena scheduling-tile pattern) */}
         <Tile eyebrow="Today" title="Schedule" span={2}>
           {stats.today_schedule.length === 0 ? (
