@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { StatCard, Button, Badge, Icon, ROLE_META } from '../ui';
 import api from '../api/client';
 import { useActivity } from '../context/ActivityContext';
-import { eventText, timeAgo } from '../components/Topbar';
+import { eventText, timeAgo, eventDestination } from '../components/Topbar';
 import MiniCalendar from '../components/MiniCalendar';
 
 const EMPTY = {
@@ -211,13 +211,16 @@ export default function Dashboard() {
             {feed.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-faint)', padding: '8px 0' }}>No recent activity.</div>
             ) : feed.map((a, i) => (
-              <div key={a.id ?? i} style={{ display: 'flex', gap: 11, padding: '10px 0', borderBottom: i < feed.length - 1 ? '1px solid var(--ink-100)' : 'none' }}>
+              <button key={a.id ?? i} onClick={() => navigate(eventDestination(a, role))}
+                style={{ display: 'flex', gap: 11, padding: '10px 0', borderBottom: i < feed.length - 1 ? '1px solid var(--ink-100)' : 'none', width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-50)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 5, flex: 'none', background: a.action === 'archived' ? 'var(--red-500)' : a.action === 'created' ? 'var(--success-500)' : a.action === 'login' ? 'var(--amber-500)' : 'var(--blue-500)' }} />
-                <div>
-                  <div style={{ fontSize: 13, color: 'var(--text-strong)', fontWeight: 600, lineHeight: 1.4 }}>{eventText(a)}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 2 }}>{a.actor_label} · {timeAgo(a.created_at)}</div>
-                </div>
-              </div>
+                <span>
+                  <span style={{ display: 'block', fontSize: 13, color: 'var(--text-strong)', fontWeight: 600, lineHeight: 1.4 }}>{eventText(a)}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-faint)', marginTop: 2 }}>{a.actor_label} · {timeAgo(a.created_at)}</span>
+                </span>
+              </button>
             ))}
           </div>
         </Tile>
