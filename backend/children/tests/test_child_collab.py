@@ -1,8 +1,10 @@
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 from accounts.models import Role, User
-from children.models import Child
+from children.models import Child, TerminationRecord
 
 
 def make_user(email, role_name, **kw):
@@ -141,6 +143,34 @@ class NameSplitTests(APITestCase):
         r = self.client.post("/api/children/", self._payload(birth_date="2000-01-01"), format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_edit_birth_date_to_out_of_range_rejected(self):
+        # A deliberate edit that changes birth_date to something outside
+        # 5-17 must still be range-checked - only an UNCHANGED birth_date
+        # is allowed to skip re-validation on update.
+        child = Child.objects.create(
+            fullname="Grown Kid", first_name="Grown", last_name="Kid",
+            birth_date="2016-01-10", gender="Male", case_type="Foster Care")
+        r = self.client.patch(f"/api/children/{child.id}/",
+                              {"birth_date": "2001-01-01"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        child.refresh_from_db()
+        self.assertEqual(str(child.birth_date), "2016-01-10")
+
+    def test_edit_with_unchanged_out_of_range_birth_date_still_succeeds(self):
+        # A legacy/long-running case whose age has since drifted outside
+        # 5-17 must remain editable via the edit form's full-object PUT,
+        # which always resends the existing birth_date unchanged.
+        child = Child.objects.create(
+            fullname="Legacy Adult", first_name="Legacy", last_name="Adult",
+            birth_date="2000-01-01", gender="Male", case_type="Foster Care")
+        r = self.client.put(f"/api/children/{child.id}/", {
+            "birth_date": "2000-01-01", "gender": "Male", "case_type": "Foster Care",
+            "education_level": "Grade 6",
+        }, format="json")
+        self.assertEqual(r.status_code, 200)
+        child.refresh_from_db()
+        self.assertEqual(child.education_level, "Grade 6")
+
     def test_required_fields_on_create(self):
         r = self.client.post("/api/children/", {"first_name": "Solo"}, format="json")
         self.assertEqual(r.status_code, 400)
@@ -192,3 +222,35 @@ class DuplicateCheckTests(APITestCase):
         self.client.force_authenticate(self.psych)
         r = self.client.get("/api/children/check-duplicate/?first_name=mika&last_name=santos")
         self.assertEqual(r.status_code, 403)
+
+
+class TerminationPrefetchTests(APITestCase):
+    """terminations must be prefetched alongside pre_assessments on
+    ChildViewSet.get_queryset() - otherwise get_termination/get_terminations
+    (SerializerMethodFields backed by obj.terminations.all()/.first()) issue
+    one extra query per child per field, and the /children/ list query count
+    scales with the number of children (N+1)."""
+
+    def setUp(self):
+        self.staff = make_user("tp@t.ph", Role.STAFF)
+        self.client.force_authenticate(self.staff)
+
+    def _make_terminated_child(self, n):
+        child = Child.objects.create(fullname=f"Term Kid {n}", status=Child.INACTIVE)
+        TerminationRecord.objects.create(
+            child=child, reason_category="Services completed", note="done")
+        return child
+
+    def test_list_query_count_does_not_scale_with_terminations(self):
+        self._make_terminated_child(1)
+        with CaptureQueriesContext(connection) as ctx1:
+            r1 = self.client.get("/api/children/?include_archived=true")
+        self.assertEqual(r1.status_code, 200)
+        baseline = len(ctx1.captured_queries)
+
+        for n in range(2, 5):
+            self._make_terminated_child(n)
+        with CaptureQueriesContext(connection) as ctx2:
+            r2 = self.client.get("/api/children/?include_archived=true")
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(len(ctx2.captured_queries), baseline)

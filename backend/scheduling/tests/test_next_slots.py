@@ -37,6 +37,20 @@ class NextSlotsTests(APITestCase):
         r = self.client.get("/api/availability/next-slots/?child=999999")
         self.assertEqual(r.status_code, 400)
 
+    def test_unassigned_psychologist_gets_404(self):
+        # A psychologist who isn't assigned to this child must not be able
+        # to learn another psychologist's assigned-child name or their
+        # availability windows via this endpoint.
+        other_psych = make_user("op@t.ph", Role.PSYCHOLOGIST)
+        self.client.force_authenticate(other_psych)
+        r = self.client.get(f"/api/availability/next-slots/?child={self.child.id}")
+        self.assertEqual(r.status_code, 404)
+
+    def test_assigned_psychologist_can_query_own_child(self):
+        self.client.force_authenticate(self.psych)
+        r = self.client.get(f"/api/availability/next-slots/?child={self.child.id}")
+        self.assertEqual(r.status_code, 200)
+
     def test_cancelled_appointment_does_not_reduce_remaining(self):
         # Mirrors _validate_booking: only CANCELLED is excluded from the count.
         start = timezone.make_aware(datetime.datetime.combine(self.tomorrow, datetime.time(9)))

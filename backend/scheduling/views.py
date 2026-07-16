@@ -74,6 +74,14 @@ class AvailabilityBlockViewSet(viewsets.ModelViewSet):
             child = Child.objects.get(pk=child_id)
         except (Child.DoesNotExist, ValueError, TypeError):
             return Response({"detail": "Unknown child."}, status=400)
+        # Admin/Staff may query any child, unrestricted. A psychologist may
+        # only query a child assigned to them - matching ChildViewSet's
+        # get_queryset() scoping. Access outside that scope 404s rather than
+        # 403ing, the same "hidden, not disclosed" convention used elsewhere
+        # for a psychologist's access to a child outside their assignment.
+        if (_role(request) == Role.PSYCHOLOGIST
+                and child.assigned_psychologist_id != request.user.id):
+            return Response({"detail": "Not found."}, status=404)
         psych = child.assigned_psychologist
         if psych is None:
             return Response({"detail": "This child has no assigned psychologist yet."}, status=400)

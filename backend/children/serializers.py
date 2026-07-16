@@ -103,16 +103,18 @@ class ChildSerializer(serializers.ModelSerializer):
     def validate_birth_date(self, value):
         # The agency only serves children aged 5-17 (inclusive); this uses
         # an exact-birthday-aware age calculation, not a floor(days/365).
-        # Age-range is CREATE-only (Task 13 lock: "edits stay
+        # Re-validation is CHANGE-only (Task 13 lock: "edits stay
         # partial-friendly"): the frontend's edit form always resends the
         # existing birth_date on PUT (full-object update pattern), so
-        # re-checking the range on every update would permanently lock out
-        # ANY field edit on a child whose age has since drifted outside
-        # 5-17 (e.g. a long-running case where the child turned 18, or a
-        # legacy record with an unusual birth_date). Date-format validation
-        # still applies on update via DRF's DateField — only the AGE-RANGE
-        # portion is create-only.
-        if value is None or self.instance is not None:
+        # re-checking an UNCHANGED birth_date on every update would
+        # permanently lock out ANY field edit on a child whose age has
+        # since drifted outside 5-17 (e.g. a long-running case where the
+        # child turned 18, or a legacy record with an unusual birth_date).
+        # But a deliberate edit that actually changes birth_date must still
+        # be range-checked - only pass unchanged values through untouched.
+        if value is None:
+            return value
+        if self.instance is not None and value == self.instance.birth_date:
             return value
         today = timezone.localdate()
         age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
