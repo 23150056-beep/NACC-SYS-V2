@@ -60,7 +60,7 @@ export default function Settings() {
               </Alert>
               <Switch checked={ai.enabled} onChange={(v) => setAi({ ...ai, enabled: v })} label="Enable AI assistance (master switch)" />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <FormField label="Ollama endpoint">
+                <FormField label="Ollama endpoint" hint="Must point to this machine (localhost) — child data never leaves RACCO I's hardware.">
                   <Input value={ai.ollama_url} onChange={(e) => setAi({ ...ai, ollama_url: e.target.value })} disabled={!ai.enabled} />
                 </FormField>
                 <FormField label="Model">
