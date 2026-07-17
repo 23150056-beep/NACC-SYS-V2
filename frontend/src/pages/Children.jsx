@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useActivity } from '../context/ActivityContext';
 import { Card, Button, Badge, Input, Select, FormField, Avatar, Alert, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
-import { CASE_TYPES, CASE_CATEGORIES, SURRENDERED_BY, TERMINATION_REASONS, PROVINCES, MUNICIPALITIES, BARANGAYS } from '../config/caseData';
+import { CASE_TYPES, CASE_CATEGORIES, SURRENDERED_BY, TERMINATION_REASONS, PROVINCES, MUNICIPALITIES, BARANGAYS, BIRTH_STATUSES, LEGAL_STATUSES, TYPES_OF_ADOPTION } from '../config/caseData';
 
 // Live "who else has this record open" chip — polls the presence heartbeat endpoint.
 function usePresence(childId) {
@@ -50,6 +50,8 @@ const EMPTY = {
   first_name: '', middle_initial: '', last_name: '',
   birth_date: '', gender: '', province: '', municipality: '', barangay: '',
   case_type: '', case_category: '', surrendered_by: '', psychologist: '', assignee_sees_history: true,
+  place_of_birth_or_found: '', birth_status: '', legal_status: '',
+  date_of_admission: '', date_of_placement_to_custodian: '', type_of_adoption: '',
   referral_source: '', referral_reason: '', education_level: '', current_placement: '', medical_notes: '',
   recommendation: '',
 };
@@ -140,6 +142,8 @@ export default function Children() {
     delete payload.updated_at; delete payload._conflict; delete payload._draft;
     if (!payload.psychologist) payload.psychologist = null;
     if (!payload.birth_date) delete payload.birth_date;
+    if (!payload.date_of_admission) delete payload.date_of_admission;
+    if (!payload.date_of_placement_to_custodian) delete payload.date_of_placement_to_custodian;
     if (form.id) delete payload.fullname;
     try {
       if (form.id) await api.put(`/children/${form.id}/`, payload);
@@ -350,11 +354,17 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
   const showReopen = isAdmin && child.status === 'inactive';
   const hasRecommendationContent = child.recommendation || child.referral_source || child.education_level || child.current_placement;
   const fields = [
-    ['Gender', child.gender || '—'],
-    ['Case Category (NACC)', child.case_category || '—'],
+    ['Sex', child.gender || '—'],
+    ['Place of Birth or Place Found', child.place_of_birth_or_found || '—'],
+    ['Birth Status', child.birth_status || '—'],
+    ['Category', child.case_category || '—'],
+    ['Legal Status', child.legal_status || '—'],
     ['Assigned Psychologist', child.psychologist_name || '—'],
     ['Previous Custodian', child.surrendered_by || '—'],
     ['Address', location],
+    ['Date of Admission to the Agency', child.date_of_admission || '—'],
+    ['Date of Placement to Custodian', child.date_of_placement_to_custodian || '—'],
+    ['Type of Adoption', child.type_of_adoption || '—'],
     ['Pre-Assessment', child.pre_assessment_status || 'Not yet'],
   ];
   return (
@@ -417,7 +427,7 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
                 <div>
                   <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Recommendation</div>
                   {child.recommendation && <p style={{ fontSize: 13, color: 'var(--text-body)', margin: '0 0 10px', lineHeight: 1.55 }}>{child.recommendation}</p>}
-                  {[['Referral Source', child.referral_source], ['Educational Placement', child.education_level], ['Place of Recovery', child.current_placement]]
+                  {[['Referral Source', child.referral_source], ['Educational Placement', child.education_level], ['Current Whereabouts', child.current_placement]]
                     .filter(([, v]) => v).map(([k, v]) => (
                       <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, paddingBottom: 10, borderBottom: '1px solid var(--ink-100)', marginBottom: 10 }}>
                         <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
@@ -654,12 +664,21 @@ function ChildForm({ form, setForm, draftKey, psychologists, blocks = [], error,
                   </div>
                 </Alert>
               )}
-              <FormField label="Birth Date" required={!isEdit}>
+              <FormField label="Date of Birth" required={!isEdit}>
                 <Input type="date" value={form.birth_date || ''} min={!isEdit ? minBirthDate : undefined} max={!isEdit ? maxBirthDate : undefined} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} required={!isEdit} />
               </FormField>
-              <FormField label="Gender" required={!isEdit}>
+              <FormField label="Sex" required={!isEdit}>
                 <Select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} required={!isEdit}>
                   <option value="">—</option><option>Male</option><option>Female</option>
+                </Select>
+              </FormField>
+              <FormField label="Place of Birth or Place Found">
+                <Input value={form.place_of_birth_or_found || ''} onChange={(e) => setForm({ ...form, place_of_birth_or_found: e.target.value })} />
+              </FormField>
+              <FormField label="Birth Status">
+                <Select value={form.birth_status || ''} onChange={(e) => setForm({ ...form, birth_status: e.target.value })}>
+                  <option value="">— Select —</option>
+                  {BIRTH_STATUSES.map((s) => <option key={s}>{s}</option>)}
                 </Select>
               </FormField>
             </div>
@@ -698,9 +717,9 @@ function ChildForm({ form, setForm, draftKey, psychologists, blocks = [], error,
                   {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
                 </Select>
               </FormField>
-              <FormField label="Case Category (NACC)">
+              <FormField label="Category">
                 <Select value={form.case_category || ''} onChange={(e) => setForm({ ...form, case_category: e.target.value })}>
-                  <option value="">— Select case category —</option>
+                  <option value="">— Select category —</option>
                   {CASE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                 </Select>
               </FormField>
@@ -708,6 +727,24 @@ function ChildForm({ form, setForm, draftKey, psychologists, blocks = [], error,
                 <Select value={form.surrendered_by || ''} onChange={(e) => setForm({ ...form, surrendered_by: e.target.value })}>
                   <option value="">— Select —</option>
                   {SURRENDERED_BY.map((s) => <option key={s}>{s}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Legal Status" hint="With issued CDCLAA / IVC / judicially declared abandoned">
+                <Select value={form.legal_status || ''} onChange={(e) => setForm({ ...form, legal_status: e.target.value })}>
+                  <option value="">— Select —</option>
+                  {LEGAL_STATUSES.map((s) => <option key={s}>{s}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Date of Admission to the Agency">
+                <Input type="date" value={form.date_of_admission || ''} onChange={(e) => setForm({ ...form, date_of_admission: e.target.value })} />
+              </FormField>
+              <FormField label="Date of Placement to Custodian" hint="For Relative/Stepparent/Adult/FA/IP">
+                <Input type="date" value={form.date_of_placement_to_custodian || ''} onChange={(e) => setForm({ ...form, date_of_placement_to_custodian: e.target.value })} />
+              </FormField>
+              <FormField label="Type of Adoption">
+                <Select value={form.type_of_adoption || ''} onChange={(e) => setForm({ ...form, type_of_adoption: e.target.value })}>
+                  <option value="">— Select —</option>
+                  {TYPES_OF_ADOPTION.map((t) => <option key={t}>{t}</option>)}
                 </Select>
               </FormField>
             </div>
@@ -723,7 +760,7 @@ function ChildForm({ form, setForm, draftKey, psychologists, blocks = [], error,
               <FormField label="Educational Placement">
                 <Input value={form.education_level || ''} onChange={(e) => setForm({ ...form, education_level: e.target.value })} placeholder="e.g. Grade 4" />
               </FormField>
-              <FormField label="Place of Recovery">
+              <FormField label="Current Whereabouts">
                 <Input value={form.current_placement || ''} onChange={(e) => setForm({ ...form, current_placement: e.target.value })} placeholder="e.g. Foster family, residential facility" />
               </FormField>
               <FormField label="Referral Reason" style={{ gridColumn: '1 / -1' }}>

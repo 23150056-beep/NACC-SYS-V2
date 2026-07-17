@@ -19,26 +19,36 @@ export const CASE_TYPES = [
   'Independent Living',
 ];
 
-// Official "Service Users by Case Category" list, NACC-SAMD-GF-000 (June 2025).
+// "Category" per the agency's official "I. Identifying Information" intake
+// form (2026-07 revision) — replaces the earlier, broader NACC-SAMD-GF-000
+// 18-item Service-Users list. Must match backend Child.CASE_CATEGORY_CHOICES.
 export const CASE_CATEGORIES = [
-  'Abandoned',
-  'Foundling',
   'Surrendered',
-  'Neglected',
+  'Abandoned',
   'Dependent',
-  'Orphaned',
-  'Victim of Physical Abuse',
-  'Victim of Sexual Abuse',
-  'Victim of OSAEC/CSAEM',
-  'Trafficked',
-  'CICL',
-  'Children at Risk (CAR)',
-  'Children in Street Situation',
-  'Victim of Child Labor',
-  'Child With Disability',
-  'Child Living with HIV',
-  'Indigenous Peoples',
-  'Others',
+  'Neglected',
+  'Without Known Parents',
+  'Orphan',
+];
+
+// New fields from the same official intake form.
+export const BIRTH_STATUSES = ['Marital', 'Non-Marital', 'Child'];
+
+export const LEGAL_STATUSES = [
+  'With Issued CDCLAA',
+  'With IVC',
+  'Judicially Declared Abandoned',
+];
+
+export const TYPES_OF_ADOPTION = [
+  'Regular',
+  'Domestic Relative',
+  'Step-parent',
+  'Adult',
+  'SIBRA',
+  'ICA Relative',
+  'IP',
+  'Foster-Adopt',
 ];
 
 // Termination reason categories (must match backend TerminationRecord.REASON_CHOICES).

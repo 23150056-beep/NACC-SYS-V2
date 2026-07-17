@@ -254,3 +254,115 @@ class TerminationPrefetchTests(APITestCase):
             r2 = self.client.get("/api/children/?include_archived=true")
         self.assertEqual(r2.status_code, 200)
         self.assertEqual(len(ctx2.captured_queries), baseline)
+
+
+class IdentifyingInformationFieldsTests(APITestCase):
+    """New fields matching the agency's official "I. Identifying
+    Information" intake form: Place of Birth/Found, Birth Status, Legal
+    Status, Date of Admission, Date of Placement to Custodian, Type of
+    Adoption - plus the narrowed Category list (Surrendered/Abandoned/
+    Dependent/Neglected/Without Known Parents/Orphan) that replaced the
+    prior 18-item NACC-SAMD-GF-000 list."""
+
+    def setUp(self):
+        self.staff = make_user("iif@t.ph", Role.STAFF)
+        self.client.force_authenticate(self.staff)
+
+    def _payload(self, **over):
+        base = {"first_name": "Ivy", "last_name": "Fields", "birth_date": "2016-01-10",
+                "gender": "Female", "case_type": "Foster Care"}
+        base.update(over)
+        return base
+
+    def test_create_and_roundtrip_all_new_fields(self):
+        r = self.client.post("/api/children/", self._payload(
+            place_of_birth_or_found="Bauang, La Union",
+            birth_status="Non-Marital",
+            legal_status="With Issued CDCLAA",
+            date_of_admission="2026-01-15",
+            date_of_placement_to_custodian="2026-02-01",
+            type_of_adoption="Foster-Adopt",
+            case_category="Without Known Parents",
+        ), format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["place_of_birth_or_found"], "Bauang, La Union")
+        self.assertEqual(r.data["birth_status"], "Non-Marital")
+        self.assertEqual(r.data["legal_status"], "With Issued CDCLAA")
+        self.assertEqual(r.data["date_of_admission"], "2026-01-15")
+        self.assertEqual(r.data["date_of_placement_to_custodian"], "2026-02-01")
+        self.assertEqual(r.data["type_of_adoption"], "Foster-Adopt")
+        self.assertEqual(r.data["case_category"], "Without Known Parents")
+
+    def test_all_six_new_fields_are_optional(self):
+        r = self.client.post("/api/children/", self._payload(), format="json")
+        self.assertEqual(r.status_code, 201)
+        for f in ("place_of_birth_or_found", "birth_status", "legal_status",
+                  "date_of_admission", "date_of_placement_to_custodian", "type_of_adoption"):
+            self.assertIn(f, r.data)
+            self.assertIn(r.data[f], (None, ""))
+
+    def test_category_rejects_a_removed_samd_value(self):
+        r = self.client.post("/api/children/", self._payload(case_category="Trafficked"), format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("case_category", r.data)
+
+    def test_category_accepts_all_six_new_values(self):
+        for value in ("Surrendered", "Abandoned", "Dependent", "Neglected", "Without Known Parents", "Orphan"):
+            r = self.client.post("/api/children/", self._payload(
+                first_name="Ivy", last_name=f"Fields-{value}", case_category=value,
+            ), format="json")
+            self.assertEqual(r.status_code, 201, f"{value} should be accepted, got {r.data}")
+
+    def test_existing_record_with_removed_category_value_still_readable(self):
+        # A record categorized before the list was narrowed (e.g. under the
+        # old NACC-SAMD-GF-000 "Trafficked" option) must still round-trip
+        # correctly on read/unrelated-edit - only NEW writes of a removed
+        # value are rejected, existing data is not silently dropped.
+        child = Child.objects.create(
+            fullname="Legacy Kid", first_name="Legacy", last_name="Kid",
+            birth_date="2016-01-10", gender="Female", case_type="Foster Care",
+            case_category="Trafficked")
+        r = self.client.get(f"/api/children/{child.id}/")
+        self.assertEqual(r.data["case_category"], "Trafficked")
+        r2 = self.client.patch(f"/api/children/{child.id}/", {"medical_notes": "update"}, format="json")
+        self.assertEqual(r2.status_code, 200)
+        child.refresh_from_db()
+        self.assertEqual(child.case_category, "Trafficked")
+
+    def test_edit_form_full_put_with_unchanged_legacy_category_does_not_block_save(self):
+        # The actual regression this guards against: Children.jsx's edit
+        # form does a full PUT resending every field on every save,
+        # including case_category unchanged (not a partial PATCH that
+        # would just omit it). Without validate_case_category's
+        # change-only exemption, this would 400 on a field nobody is
+        # touching, permanently blocking any edit to a record that
+        # predates the narrowed Category list.
+        child = Child.objects.create(
+            fullname="Legacy Kid", first_name="Legacy", last_name="Kid",
+            birth_date="2016-01-10", gender="Female", case_type="Foster Care",
+            case_category="Trafficked")
+        r = self.client.put(f"/api/children/{child.id}/", {
+            "first_name": "Legacy", "last_name": "Kid", "birth_date": "2016-01-10",
+            "gender": "Female", "case_type": "Foster Care",
+            "case_category": "Trafficked",  # unchanged, resent by the full-object PUT
+            "medical_notes": "unrelated update",
+        }, format="json")
+        self.assertEqual(r.status_code, 200)
+        child.refresh_from_db()
+        self.assertEqual(child.case_category, "Trafficked")
+        self.assertEqual(child.medical_notes, "unrelated update")
+
+    def test_edit_form_full_put_changing_away_from_legacy_category_still_validates(self):
+        # A deliberate change AWAY from a legacy value must still be
+        # checked against the current (narrowed) choice list.
+        child = Child.objects.create(
+            fullname="Legacy Kid2", first_name="Legacy", last_name="Kid2",
+            birth_date="2016-01-10", gender="Female", case_type="Foster Care",
+            case_category="Trafficked")
+        r = self.client.put(f"/api/children/{child.id}/", {
+            "first_name": "Legacy", "last_name": "Kid2", "birth_date": "2016-01-10",
+            "gender": "Female", "case_type": "Foster Care",
+            "case_category": "CICL",  # a different, also-removed value
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("case_category", r.data)

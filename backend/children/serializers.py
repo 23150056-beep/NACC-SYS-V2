@@ -27,6 +27,15 @@ class ChildSerializer(serializers.ModelSerializer):
         source="assigned_psychologist.fullname", read_only=True, default=None,
     )
 
+    # Declared explicitly (not auto-generated from the model's `choices=`) so
+    # the automatic ChoiceField membership check does NOT run before our own
+    # validate_case_category — that check happens first, in field-level
+    # to_internal_value, and would reject an unchanged legacy value (e.g.
+    # "Trafficked", from before the Category list was narrowed) on every
+    # future edit before validate_case_category ever got a chance to apply
+    # its change-only exemption.
+    case_category = serializers.CharField(required=False, allow_blank=True)
+
     termination = serializers.SerializerMethodField()
     terminations = serializers.SerializerMethodField()
     # Computed V2 profile surface: has the pre-assessment been answered, and
@@ -40,6 +49,8 @@ class ChildSerializer(serializers.ModelSerializer):
             "id", "first_name", "middle_initial", "last_name", "fullname", "birth_date", "gender",
             "province", "municipality", "barangay", "address",
             "case_type", "case_category", "surrendered_by", "status", "case_status", "assignee_sees_history",
+            "place_of_birth_or_found", "birth_status", "legal_status",
+            "date_of_admission", "date_of_placement_to_custodian", "type_of_adoption",
             "photo", "referral_source", "referral_reason",
             "education_level", "current_placement", "medical_notes", "recommendation",
             "psychologist", "psychologist_name",
@@ -121,6 +132,25 @@ class ChildSerializer(serializers.ModelSerializer):
         if not (5 <= age <= 17):
             raise serializers.ValidationError(
                 "The child must be between 5 and 17 years old.")
+        return value
+
+    def validate_case_category(self, value):
+        # Task 13 lock ("edits stay partial-friendly") applies here too: the
+        # frontend's edit form always resends the full object on PUT
+        # (Children.jsx save()), including case_category unchanged. The
+        # Category list was narrowed from 18 NACC-SAMD-GF-000 values down to
+        # 6 (see CASE_CATEGORY_CHOICES) - a record still holding one of the
+        # removed values (e.g. "Trafficked") would otherwise fail DRF's
+        # ChoiceField validation on EVERY future edit, even ones that never
+        # touch this field. Mirrors validate_birth_date's change-only guard:
+        # pass an unchanged value through untouched, still enforce the
+        # current choice list when the value is genuinely being changed.
+        if self.instance is not None and value == self.instance.case_category:
+            return value
+        valid = {c[0] for c in Child.CASE_CATEGORY_CHOICES}
+        if value and value not in valid:
+            raise serializers.ValidationError(
+                f'"{value}" is not a valid choice.')
         return value
 
     def create(self, validated_data):

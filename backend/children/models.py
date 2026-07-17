@@ -56,27 +56,18 @@ class Child(models.Model):
         ("Independent Living", "Independent Living"),
     ]
 
-    # Official "Service Users by Case Category" list from NACC-SAMD-GF-000
-    # (June 2025), the government AACC-program certification tool.
+    # "Category" per the agency's official Identifying Information intake
+    # form (2026-07 revision). Replaces the earlier, broader NACC-SAMD-GF-000
+    # 18-item Service-Users list at the product owner's direction — existing
+    # records holding one of the removed values (e.g. "Trafficked") keep that
+    # stored value, it just won't appear as a pickable option anymore.
     CASE_CATEGORY_CHOICES = [
-        ("Abandoned", "Abandoned"),
-        ("Foundling", "Foundling"),
         ("Surrendered", "Surrendered"),
-        ("Neglected", "Neglected"),
+        ("Abandoned", "Abandoned"),
         ("Dependent", "Dependent"),
-        ("Orphaned", "Orphaned"),
-        ("Victim of Physical Abuse", "Victim of Physical Abuse"),
-        ("Victim of Sexual Abuse", "Victim of Sexual Abuse"),
-        ("Victim of OSAEC/CSAEM", "Victim of OSAEC/CSAEM"),
-        ("Trafficked", "Trafficked"),
-        ("CICL", "CICL"),
-        ("Children at Risk (CAR)", "Children at Risk (CAR)"),
-        ("Children in Street Situation", "Children in Street Situation"),
-        ("Victim of Child Labor", "Victim of Child Labor"),
-        ("Child With Disability", "Child With Disability"),
-        ("Child Living with HIV", "Child Living with HIV"),
-        ("Indigenous Peoples", "Indigenous Peoples"),
-        ("Others", "Others"),
+        ("Neglected", "Neglected"),
+        ("Without Known Parents", "Without Known Parents"),
+        ("Orphan", "Orphan"),
     ]
 
     # Who surrendered the child to NACC / RACCO I.
@@ -84,6 +75,29 @@ class Child(models.Model):
         ("Social Worker", "Social Worker"),
         ("Police", "Police"),
         ("Relatives", "Relatives"),
+    ]
+
+    # New fields below match the agency's official "I. Identifying
+    # Information" intake form (2026-07).
+    BIRTH_STATUS_CHOICES = [
+        ("Marital", "Marital"),
+        ("Non-Marital", "Non-Marital"),
+        ("Child", "Child"),
+    ]
+    LEGAL_STATUS_CHOICES = [
+        ("With Issued CDCLAA", "With Issued CDCLAA"),
+        ("With IVC", "With IVC"),
+        ("Judicially Declared Abandoned", "Judicially Declared Abandoned"),
+    ]
+    TYPE_OF_ADOPTION_CHOICES = [
+        ("Regular", "Regular"),
+        ("Domestic Relative", "Domestic Relative"),
+        ("Step-parent", "Step-parent"),
+        ("Adult", "Adult"),
+        ("SIBRA", "SIBRA"),
+        ("ICA Relative", "ICA Relative"),
+        ("IP", "IP"),
+        ("Foster-Adopt", "Foster-Adopt"),
     ]
 
     # Deprecated in favour of assigned_psychologist; kept for migration safety.
@@ -111,9 +125,16 @@ class Child(models.Model):
     barangay = models.CharField(max_length=100, blank=True)
     address = models.CharField(max_length=150, blank=True)
     case_type = models.CharField(max_length=150, blank=True, choices=CASE_TYPE_CHOICES)
-    # Official NACC-SAMD-GF-000 (June 2025) "Service Users by Case Category" list.
+    # Official agency "Identifying Information" intake form Category list.
     case_category = models.CharField(max_length=50, blank=True, choices=CASE_CATEGORY_CHOICES)
     surrendered_by = models.CharField(max_length=50, blank=True, choices=SURRENDERED_BY_CHOICES)
+    # Remaining "I. Identifying Information" fields not already covered above.
+    place_of_birth_or_found = models.CharField(max_length=150, blank=True)
+    birth_status = models.CharField(max_length=20, blank=True, choices=BIRTH_STATUS_CHOICES)
+    legal_status = models.CharField(max_length=50, blank=True, choices=LEGAL_STATUS_CHOICES)
+    date_of_admission = models.DateField(null=True, blank=True)
+    date_of_placement_to_custodian = models.DateField(null=True, blank=True)
+    type_of_adoption = models.CharField(max_length=50, blank=True, choices=TYPE_OF_ADOPTION_CHOICES)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ACTIVE)
     case_status = models.CharField(
         max_length=20, choices=CASE_STATUS_CHOICES, default=STAGE_PRE_ASSESSMENT)
