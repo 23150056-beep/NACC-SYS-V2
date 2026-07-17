@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -19,6 +20,7 @@ const STATUS_TONE = { scheduled: 'brand', completed: 'success', no_show: 'amber'
 const STATUS_COLOR = { scheduled: 'var(--blue-600)', completed: 'var(--success-600)', no_show: 'var(--amber-500)', cancelled: 'var(--text-faint)' };
 
 export default function Schedule() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
   const role = user?.role_name || 'Staff';
@@ -183,10 +185,13 @@ export default function Schedule() {
   return (
     <div style={{ ...PAGE, position: 'relative' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {Object.entries(STATUS_TONE).map(([k, tone]) => (
-            <Badge key={k} tone={tone} size="sm" dot>{k.replace('_', '-')}</Badge>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <Button variant="ghost" onClick={() => navigate('/')} iconLeft={<Icon name="arrow-left" size={17} />}>Back to Dashboard</Button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {Object.entries(STATUS_TONE).map(([k, tone]) => (
+              <Badge key={k} tone={tone} size="sm" dot>{k.replace('_', '-')}</Badge>
+            ))}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           {(isPsych || role === 'Administrator') && <Button variant="secondary" onClick={openCreateBlock} iconLeft={<Icon name="clock" size={16} />}>Add Availability</Button>}
