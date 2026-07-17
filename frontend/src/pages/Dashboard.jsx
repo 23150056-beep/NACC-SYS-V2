@@ -83,12 +83,14 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Row 2 — census stat tiles */}
+      {/* Row 2 — census stat tiles. Compact padding (Dashboard-only, via the
+          style prop — AgencySummary's own StatCard usage is untouched)
+          frees up real height for the Census chart row below. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, flex: 'none' }}>
-        <StatCard label={isPsychologist ? 'My Active Cases' : 'Active Children'} value={census.active} tone="success" icon={<Icon name="users" size={18} />} />
-        <StatCard label="In Counseling" value={(census.by_case_status || {}).counseling || 0} tone="brand" icon={<Icon name="heart-pulse" size={18} />} hint={`${(census.by_case_status || {}).pre_assessment || 0} in pre-assessment`} />
-        <StatCard label="Inactive (Terminated)" value={census.inactive} tone="brand" icon={<Icon name="archive" size={18} />} />
-        <StatCard label="Pending Pre-Assessments" value={stats.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} hint={stats.unassessed ? `${stats.unassessed} not yet assessed` : undefined} />
+        <StatCard label={isPsychologist ? 'My Active Cases' : 'Active Children'} value={census.active} tone="success" icon={<Icon name="users" size={18} />} style={{ padding: '12px 16px', gap: 4 }} />
+        <StatCard label="In Counseling" value={(census.by_case_status || {}).counseling || 0} tone="brand" icon={<Icon name="heart-pulse" size={18} />} hint={`${(census.by_case_status || {}).pre_assessment || 0} in pre-assessment`} style={{ padding: '12px 16px', gap: 4 }} />
+        <StatCard label="Inactive (Terminated)" value={census.inactive} tone="brand" icon={<Icon name="archive" size={18} />} style={{ padding: '12px 16px', gap: 4 }} />
+        <StatCard label="Pending Pre-Assessments" value={stats.pending_pre_assessments} tone="amber" icon={<Icon name="loader" size={18} />} hint={stats.unassessed ? `${stats.unassessed} not yet assessed` : undefined} style={{ padding: '12px 16px', gap: 4 }} />
       </div>
 
       {/* Bento body — three rows. Census gets its own full-width row at the
