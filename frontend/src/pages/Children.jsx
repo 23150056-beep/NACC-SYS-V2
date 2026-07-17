@@ -199,9 +199,9 @@ export default function Children() {
         <div style={{ width: 320, maxWidth: '100%' }}>
           <Input placeholder="Search by name or case ID…" value={q} onChange={(e) => setQ(e.target.value)} leading={<Icon name="search" size={16} />} />
         </div>
-        {canManage
-          ? <Button variant="primary" onClick={openCreate} iconLeft={<Icon name="plus" size={17} />}>Add Record</Button>
-          : <Badge tone="neutral" dot>Read-only for {user?.role_name}s</Badge>}
+        {canManage && (
+          <Button variant="primary" onClick={openCreate} iconLeft={<Icon name="plus" size={17} />}>Add Record</Button>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
