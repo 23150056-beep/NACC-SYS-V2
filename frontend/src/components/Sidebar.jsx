@@ -13,7 +13,7 @@ const NAV = [
   // governance, psychologists only manage their agency form templates here
   // (their instrument catalog lives inside the Pre-Assessment wizard, step 4).
   { to: '/instruments', label: 'Instruments & Agency Forms', icon: 'clipboard-pen', roles: ['Administrator'] },
-  { to: '/instruments', label: 'Agency Form Templates', icon: 'file-text', roles: ['Psychologist'] },
+  { to: '/instruments', label: 'Pre-Assessment Instruments', icon: 'file-text', roles: ['Psychologist'] },
   { section: 'Clinical' },
   { to: '/pre-assessment', label: 'Pre-Assessment', icon: 'clipboard-list', roles: ['Psychologist'] },
   { to: '/monitoring', label: 'Progress Monitoring', icon: 'activity', roles: ['Administrator', 'Psychologist', 'Staff'] },

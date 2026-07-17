@@ -128,7 +128,7 @@ export default function Instruments() {
             ))}
           </div>
         ) : (
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Agency Form Templates</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Pre-Assessment Instruments</div>
         )}
         {tab === 'catalog'
           ? <Button variant="primary" onClick={() => { setError(''); setForm({ ...EMPTY_INSTRUMENT }); }} iconLeft={<Icon name="plus" size={17} />}>Add Instrument Title</Button>
