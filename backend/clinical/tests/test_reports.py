@@ -199,6 +199,24 @@ class DashboardTest(ReportsBase):
         resp = self.client.get("/api/reports/dashboard/")
         self.assertEqual(resp.data["total_children"], 1)
 
+    def test_dashboard_range_changes_intake_bucketing(self):
+        # The census range selector must re-bucket intake vs termination,
+        # not just the pre-assessment trend.
+        self._auth("a@racco1.gov.ph")
+        yearly = self.client.get("/api/reports/dashboard/?range=yearly")
+        buckets = [row["bucket"] for row in yearly.data["intake_vs_termination"]]
+        self.assertTrue(buckets and all(len(b) == 4 for b in buckets), buckets)  # "2026"
+
+        quarterly = self.client.get("/api/reports/dashboard/?range=quarterly")
+        qbuckets = [row["bucket"] for row in quarterly.data["intake_vs_termination"]]
+        self.assertTrue(qbuckets and all("-Q" in b for b in qbuckets), qbuckets)  # "2026-Q3"
+
+    def test_quarterly_bucket_format(self):
+        from datetime import date
+        from clinical import reports
+        self.assertEqual(reports.bucket(date(2026, 7, 18), "quarterly"), "2026-Q3")
+        self.assertEqual(reports.bucket(date(2026, 1, 2), "quarterly"), "2026-Q1")
+
 
 class ChildReportInterviewsTest(ReportsBase):
     """The chart bundle must list EVERY ClinicalInterviewRecord of the child —

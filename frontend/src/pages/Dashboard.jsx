@@ -25,21 +25,32 @@ const GAP_TONE = { danger: 'var(--red-500)', warning: 'var(--amber-500)', info: 
 // inside it hits the classic flexbox "won't shrink below content size" trap and never
 // actually scrolls — it just grows the tile past the grid row instead. Owning the whole
 // chain here lets `minHeight: 0` genuinely take effect on the scrolling element.
-const Tile = ({ eyebrow, title, span = 1, children, style = {} }) => (
+const Tile = ({ eyebrow, title, span = 1, actions = null, children, style = {} }) => (
   <div style={{
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
     boxShadow: 'var(--shadow-sm)', overflow: 'hidden', position: 'relative',
     gridColumn: `span ${span}`, minHeight: 0, display: 'flex', flexDirection: 'column', ...style,
   }}>
-    <div style={{ flex: 'none', padding: '13px 14px 0' }}>
-      {eyebrow && <div className="racco-eyebrow" style={{ marginBottom: 3 }}>{eyebrow}</div>}
-      {title && <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-strong)', margin: 0 }}>{title}</h3>}
+    <div style={{ flex: 'none', padding: '13px 14px 0', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+      <div>
+        {eyebrow && <div className="racco-eyebrow" style={{ marginBottom: 3 }}>{eyebrow}</div>}
+        {title && <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-strong)', margin: 0 }}>{title}</h3>}
+      </div>
+      {actions}
     </div>
     <div className="racco-scroll" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 14 }}>
       {children}
     </div>
   </div>
 );
+
+// Census range selector: label → backend `range` value (reports.bucket).
+const RANGES = [
+  ['Weekly', 'weekly'],
+  ['Monthly', 'monthly'],
+  ['Quarterly', 'quarterly'],
+  ['Annual', 'yearly'],
+];
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -48,13 +59,14 @@ export default function Dashboard() {
   const isPsychologist = role === 'Psychologist';
   const m = ROLE_META[role] || ROLE_META.Staff;
   const [stats, setStats] = useState(EMPTY);
+  const [range, setRange] = useState('monthly');
   const [appointments, setAppointments] = useState([]);
   const { events } = useActivity();
   const feed = events.slice(0, 15);
 
   useEffect(() => {
-    api.get('/reports/dashboard/?range=monthly').then((r) => setStats({ ...EMPTY, ...r.data })).catch(() => setStats(EMPTY));
-  }, []);
+    api.get(`/reports/dashboard/?range=${range}`).then((r) => setStats({ ...EMPTY, ...r.data })).catch(() => setStats(EMPTY));
+  }, [range]);
 
   useEffect(() => {
     api.get('/appointments/').then((r) => setAppointments(r.data)).catch(() => {});
@@ -125,7 +137,17 @@ export default function Dashboard() {
           entirely on short windows before this fix. */}
       <div style={{ flex: 1, minHeight: 580, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gridTemplateRows: 'minmax(0,1fr) minmax(0,1.25fr) minmax(0,0.75fr)' }}>
         {/* Intake vs. termination — full width, top priority */}
-        <Tile eyebrow="Census" title="Intake vs. termination" span={4}>
+        <Tile eyebrow="Census" title="Intake vs. termination" span={4}
+          actions={(
+            <div role="tablist" aria-label="Census date range" style={{ display: 'flex', gap: 4 }}>
+              {RANGES.map(([label, value]) => (
+                <button key={value} role="tab" aria-selected={range === value} onClick={() => setRange(value)}
+                  style={{ padding: '4px 11px', borderRadius: 'var(--radius-pill)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-sans)', background: range === value ? 'var(--blue-600)' : 'var(--ink-50)', color: range === value ? '#fff' : 'var(--text-muted)', border: `1px solid ${range === value ? 'var(--blue-600)' : 'var(--border)'}` }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}>
           {stats.intake_vs_termination.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No intake activity yet.</div>
           ) : (

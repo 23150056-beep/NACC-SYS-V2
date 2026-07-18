@@ -329,16 +329,16 @@ class DashboardView(generics.GenericAPIView):
                         or getattr(c.assigned_psychologist, "username", ""))
                 counseling_per_psy[name] = counseling_per_psy.get(name, 0) + 1
 
-        # Intake vs termination trend (monthly, last 6 buckets).
+        # Intake vs termination trend (follows the range selector, last 6 buckets).
         intake, term = {}, {}
         for c in scoped_children:
-            b = reports.bucket(c.created_at.date(), "monthly")
+            b = reports.bucket(c.created_at.date(), rng)
             intake[b] = intake.get(b, 0) + 1
         term_qs = TerminationRecord.objects.all()
         if role == Role.PSYCHOLOGIST:
             term_qs = term_qs.filter(child__assigned_psychologist=request.user)
         for t in term_qs:
-            b = reports.bucket(t.date, "monthly")
+            b = reports.bucket(t.date, rng)
             term[b] = term.get(b, 0) + 1
         months = sorted(set(intake) | set(term))[-6:]
         intake_vs_termination = [

@@ -6,6 +6,8 @@ never computes scores."""
 def bucket(d, rng):
     if rng == "yearly":
         return str(d.year)
+    if rng == "quarterly":
+        return f"{d.year}-Q{(d.month - 1) // 3 + 1}"
     if rng == "weekly":
         return d.strftime("%Y-W%U")
     return d.strftime("%Y-%m")  # monthly (default)
