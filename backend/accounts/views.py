@@ -124,7 +124,15 @@ class UserViewSet(viewsets.ModelViewSet):
         temp_password = _generate_temp_password()
         user.set_password(temp_password)
         user.must_change_password = True
-        user.save(update_fields=["password", "must_change_password", "updated_at"])
+        update_fields = ["password", "must_change_password", "updated_at"]
+        # Single-admin handover: a new Administrator created while another
+        # admin is active takes over at first login (accounts/serializers.py).
+        if (user.role and user.role.role_name == Role.ADMINISTRATOR
+                and User.objects.filter(role__role_name=Role.ADMINISTRATOR,
+                                        status=User.ACTIVE).exclude(pk=user.pk).exists()):
+            user.admin_takeover_pending = True
+            update_fields.append("admin_takeover_pending")
+        user.save(update_fields=update_fields)
         self._log(user, ActivityLog.CREATED)
         data = UserSerializer(user).data
         data["temp_password"] = temp_password

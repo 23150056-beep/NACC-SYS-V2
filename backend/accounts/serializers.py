@@ -25,9 +25,9 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id", "email", "username", "first_name", "last_name",
             "middle_initial", "contact_details", "role", "role_name",
-            "fullname", "status", "must_change_password",
+            "fullname", "status", "must_change_password", "admin_takeover_pending",
         ]
-        read_only_fields = ["must_change_password"]
+        read_only_fields = ["must_change_password", "admin_takeover_pending"]
 
 
 class UserWriteSerializer(serializers.ModelSerializer):
@@ -100,6 +100,27 @@ class ChangePasswordSerializer(serializers.Serializer):
         return user
 
 
+def _complete_admin_takeover(new_admin):
+    """The successor administrator's first login: archive every other admin
+    account (their sessions die immediately — archived users fail JWT auth)
+    and clear the pending flag. A deactivated admin can only return via a
+    brand-new account (product decision 2026-07-18)."""
+    others = (User.objects
+              .filter(role__role_name=Role.ADMINISTRATOR, status=User.ACTIVE)
+              .exclude(pk=new_admin.pk))
+    for old in others:
+        old.status = User.ARCHIVED
+        old.is_active = False
+        old.save(update_fields=["status", "is_active", "updated_at"])
+        log_activity(
+            new_admin, ActivityLog.ARCHIVED, ActivityLog.USER,
+            entity_type="User",
+            entity_label=f"{old.fullname or old.email} (admin handover)",
+            entity_id=old.id)
+    new_admin.admin_takeover_pending = False
+    new_admin.save(update_fields=["admin_takeover_pending", "updated_at"])
+
+
 class LoginSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -109,6 +130,11 @@ class LoginSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
+        # Runs before the user payload is built so the response reflects the
+        # cleared flag and the old admin is locked out before this response
+        # even lands.
+        if self.user.admin_takeover_pending:
+            _complete_admin_takeover(self.user)
         data["user"] = UserSerializer(self.user).data
         log_activity(self.user, ActivityLog.LOGIN, ActivityLog.SECURITY)
         return data

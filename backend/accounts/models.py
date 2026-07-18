@@ -36,6 +36,11 @@ class User(AbstractUser):
     # enforcement (see accounts/authentication.py) blocks all other API
     # access until the user sets their own password.
     must_change_password = models.BooleanField(default=False)
+    # Single-admin handover: set when this user is created as the successor
+    # Administrator while another admin is still active. Their FIRST login
+    # archives every other admin account and clears the flag (see
+    # accounts/serializers.py LoginSerializer).
+    admin_takeover_pending = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

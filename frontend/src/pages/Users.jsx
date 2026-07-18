@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useActivity } from '../context/ActivityContext';
-import { Card, Button, Alert, Input, Select, FormField, Avatar, RoleBadge, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
+import { Card, Button, Badge, Alert, Input, Select, FormField, Avatar, RoleBadge, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
 
 // No password field: the server generates a temporary password on create and
@@ -36,7 +36,8 @@ export default function Users() {
     setError('');
     try {
       const payload = { ...form };
-      delete payload.role_name; delete payload.fullname; delete payload.must_change_password;
+      delete payload.role_name; delete payload.fullname;
+      delete payload.must_change_password; delete payload.admin_takeover_pending;
       if (form.id) {
         await api.put(`/users/${form.id}/`, payload);
         toast.success('User updated');
@@ -118,7 +119,12 @@ export default function Users() {
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-body)' }} className="racco-mono">{u.email}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }} className="racco-mono">{u.contact_details || '—'}</td>
-                    <td style={{ padding: '12px 16px' }}>{u.role_name ? <RoleBadge role={u.role_name} /> : '—'}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {u.role_name ? <RoleBadge role={u.role_name} /> : '—'}
+                        {u.admin_takeover_pending && <Badge tone="warning" size="sm" dot>Takeover pending</Badge>}
+                      </div>
+                    </td>
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button title="Edit user" aria-label={`Edit ${u.fullname || u.email}`} onClick={() => openEdit(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
@@ -165,6 +171,15 @@ export default function Users() {
                     {roles.map((r) => <option key={r.id} value={r.id}>{r.role_name}</option>)}
                   </Select>
                 </FormField>
+              )}
+              {/* Single-admin handover warning (product decision 2026-07-18). */}
+              {!form.id && roles.find((r) => String(r.id) === String(form.role))?.role_name === 'Administrator' && (
+                <Alert tone="warning" icon={<Icon name="alert-triangle" size={18} />}>
+                  Admin handover: when this new administrator logs in for the
+                  first time, every other administrator account — including
+                  yours — is deactivated immediately. A deactivated
+                  administrator can only return with a brand-new account.
+                </Alert>
               )}
               {!form.id && (
                 <Alert tone="info" icon={<Icon name="key-round" size={18} />}>
