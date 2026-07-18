@@ -9,6 +9,9 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: 'layout-dashboard', roles: ['Administrator', 'Psychologist', 'Staff'], end: true },
   { section: 'Casework' },
   { to: '/children', label: 'Records', icon: 'users', roles: ['Administrator', 'Psychologist', 'Staff'] },
+  // Terminated-case archive: Admin + Staff only (psychologists keep seeing
+  // their own terminated cases in Records, but have no archive feature).
+  { to: '/archive', label: 'Archive', icon: 'archive', roles: ['Administrator', 'Staff'] },
   // Same route, role-scoped label/description: admins get full catalog
   // governance, psychologists only manage their agency form templates here
   // (their instrument catalog lives inside the Pre-Assessment wizard, step 4).

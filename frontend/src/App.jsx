@@ -10,6 +10,7 @@ import Topbar from './components/Topbar';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Children from './pages/Children';
+import Archive from './pages/Archive';
 import Report from './pages/Report';
 import ChildProgressReport from './pages/ChildProgressReport';
 import Monitoring from './pages/Monitoring';
@@ -47,6 +48,8 @@ export default function App() {
           <Route path="/survey/:token" element={<Survey />} />
           <Route path="/" element={<ProtectedRoute><Shell><Dashboard /></Shell></ProtectedRoute>} />
           <Route path="/children" element={<ProtectedRoute roles={['Administrator', 'Staff', 'Psychologist']}><Shell><Children /></Shell></ProtectedRoute>} />
+          {/* Terminated-case archive — no Psychologist access (decision 2026-07-18). */}
+          <Route path="/archive" element={<ProtectedRoute roles={['Administrator', 'Staff']}><Shell><Archive /></Shell></ProtectedRoute>} />
           <Route path="/instruments" element={<ProtectedRoute roles={INSTRUMENT_MANAGER_ROLES}><Shell><Instruments /></Shell></ProtectedRoute>} />
           <Route path="/pre-assessment" element={<ProtectedRoute roles={['Psychologist']}><Shell><PreAssessment /></Shell></ProtectedRoute>} />
           <Route path="/schedule" element={<ProtectedRoute roles={['Administrator', 'Psychologist', 'Staff']}><Shell><Schedule /></Shell></ProtectedRoute>} />
