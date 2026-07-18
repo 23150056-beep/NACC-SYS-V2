@@ -253,7 +253,7 @@ export default function Children() {
             <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                  {['Child', 'Gender / Age', 'Psychologist', 'Status', (canManage || isPsych) ? 'Actions' : ''].filter(Boolean).map((h) => (
+                  {['Child', 'Gender / Age', 'Psychologist', 'Status'].map((h) => (
                     <th key={h} scope="col" style={{ textAlign: 'left', padding: '11px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -288,14 +288,6 @@ export default function Children() {
                           : '—'}
                     </td>
                     <td style={{ padding: '11px 16px' }}><StatusChip child={c} /></td>
-                    {(canManage || isPsych) && (
-                      <td style={{ padding: '11px 16px' }} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          {canEditRecord(c) && <button title="Edit record" aria-label={`Edit ${c.fullname}`} onClick={() => openEdit(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>}
-                          {canTerminate(c) && <button title="Terminate / archive case" aria-label={`Terminate ${c.fullname}'s case`} onClick={() => setTerminating(c)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="archive" size={15} /></button>}
-                        </div>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>
