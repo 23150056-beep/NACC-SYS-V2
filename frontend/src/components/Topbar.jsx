@@ -17,6 +17,7 @@ const SCREEN_TITLES = {
   '/users': ['User Management', 'Accounts & roles'],
   '/users/handoffs': ['Credential Handoffs', 'Temporary passwords awaiting physical handoff'],
   '/settings': ['System Settings', 'Agency configuration'],
+  '/profile': ['My Profile', 'Optional account details (prototype preview)'],
 };
 
 export const ACTION_META = {
@@ -188,6 +189,17 @@ export default function Topbar() {
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{role}</div>
           </div>
         </div>
+
+        {/* My Profile (demo prototype) — Social Worker / Psychologist only. */}
+        {['Staff', 'Psychologist'].includes(role) && (
+          <button
+            onClick={() => navigate('/profile')} title="My Profile" aria-label="My Profile"
+            {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })}
+            style={{ background: 'var(--ink-50)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', width: 40, height: 40, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-body)', transition: 'var(--transition-base)' }}
+          >
+            <Icon name="user-circle" size={17} />
+          </button>
+        )}
 
         <button
           onClick={openPw} title="Change password" aria-label="Change password"
