@@ -187,7 +187,9 @@ class ChildViewSet(_ArchivableViewSet):
     @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
         """Admin-only: a terminated child returned to the clinic. Reactivate
-        the case on top of the archived record — history is retained."""
+        the case on top of the archived record — history is retained, but the
+        psychologist assignment is cleared: a reopened case returns to the
+        pool for staff/admin to assign fresh."""
         child = self.get_object()
         role = getattr(getattr(request.user, "role", None), "role_name", None)
         if role != Role.ADMINISTRATOR:
@@ -198,7 +200,8 @@ class ChildViewSet(_ArchivableViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         child.status = Child.ACTIVE
         child.case_status = Child.STAGE_PRE_ASSESSMENT
-        child.save(update_fields=["status", "case_status", "updated_at"])
+        child.assigned_psychologist = None
+        child.save(update_fields=["status", "case_status", "assigned_psychologist", "updated_at"])
         self._log(child, ActivityLog.UPDATED)
         return Response({"status": child.status, "case_status": child.case_status})
 

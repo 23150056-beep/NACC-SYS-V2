@@ -25,6 +25,20 @@ class ReopenTests(APITestCase):
         self.assertEqual(self.child.case_status, Child.STAGE_PRE_ASSESSMENT)
         self.assertEqual(self.child.terminations.count(), 1)  # history kept
 
+    def test_reopen_resets_assigned_psychologist_but_keeps_details(self):
+        # A reopened case returns to the pool unassigned — staff/admin pick
+        # the (possibly different) psychologist fresh. Everything else stays.
+        self.child.case_type = "Foster Care"
+        self.child.save(update_fields=["case_type"])
+        self.client.force_authenticate(self.admin)
+        r = self.client.post(f"/api/children/{self.child.id}/reopen/")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.child.refresh_from_db()
+        self.assertIsNone(self.child.assigned_psychologist)
+        self.assertEqual(self.child.fullname, "Back Again")
+        self.assertEqual(self.child.case_type, "Foster Care")
+        self.assertEqual(self.child.terminations.count(), 1)
+
     def test_non_admin_cannot_reopen(self):
         self.client.force_authenticate(self.psych)
         r = self.client.post(f"/api/children/{self.child.id}/reopen/")

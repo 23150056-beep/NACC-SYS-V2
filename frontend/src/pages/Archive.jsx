@@ -122,8 +122,9 @@ export default function Archive() {
           <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '92%', background: 'var(--surface)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-xl)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-strong)' }}>Reopen {reopening.fullname}&apos;s case?</div>
             <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, lineHeight: 1.55 }}>
-              The case returns to <strong>Active · Pre-Assessment</strong>. All previous
-              records, assessments, and the termination history are retained.
+              The case returns to <strong>Active · Pre-Assessment</strong> with{' '}
+              <strong>no assigned psychologist</strong> — assign one fresh from Records.
+              All previous records, assessments, and the termination history are retained.
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <Button variant="secondary" fullWidth onClick={() => setReopening(null)}>Cancel</Button>
