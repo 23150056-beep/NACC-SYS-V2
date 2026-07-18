@@ -333,7 +333,8 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
   const [pendingSlot, setPendingSlot] = useState(null);
   const [purpose, setPurpose] = useState(null);
   const [bookingBusy, setBookingBusy] = useState(false);
-  const defaultPurpose = child.pre_assessment_status === 'Answered' ? 'session' : 'pre_assessment';
+  // Answered/Completed both mean the pre-assessment was administered.
+  const defaultPurpose = ['Answered', 'Completed'].includes(child.pre_assessment_status) ? 'session' : 'pre_assessment';
   const bookSlot = async () => {
     setBookingBusy(true);
     try {
@@ -365,7 +366,7 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
     ['Date of Admission to the Agency', child.date_of_admission || '—'],
     ['Date of Placement to Custodian', child.date_of_placement_to_custodian || '—'],
     ['Type of Adoption', child.type_of_adoption || '—'],
-    ['Pre-Assessment', child.pre_assessment_status || 'Not yet'],
+    ['Pre-Assessment', child.pre_assessment_status || '—'],
   ];
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 60, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>

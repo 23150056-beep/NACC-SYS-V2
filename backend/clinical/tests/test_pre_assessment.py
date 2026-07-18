@@ -91,7 +91,7 @@ class PreAssessmentFlowTest(APITestCase):
     def test_child_profile_surfaces_answered_and_titles(self):
         self._auth("p@racco1.gov.ph")
         before = self.client.get(f"/api/children/{self.child.id}/").data
-        self.assertEqual(before["pre_assessment_status"], "Not yet")
+        self.assertEqual(before["pre_assessment_status"], "No Consent Yet")
         self.assertEqual(before["instruments_used"], [])
         pid = self._start().data["id"]
         consent = ConsentRecord.objects.create(child=self.child, status="signed")

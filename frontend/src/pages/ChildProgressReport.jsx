@@ -5,6 +5,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Card, Button, Badge, Alert, Select, FormField, Icon, iconBtn, PAGE } from '../ui';
+import { PA_STATUS_TONES } from '../config/caseData';
 
 const CASE_STATUS_META = {
   pre_assessment: { label: 'Pre-Assessment', tone: 'amber' },
@@ -218,7 +219,7 @@ export default function ChildProgressReport() {
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <Badge tone={csMeta.tone} dot>Case: {csMeta.label}</Badge>
-            <Badge tone={child.pre_assessment_status === 'Answered' ? 'success' : 'amber'} dot>Pre-Assessment: {child.pre_assessment_status}</Badge>
+            <Badge tone={PA_STATUS_TONES[child.pre_assessment_status] || 'amber'} dot>Pre-Assessment: {child.pre_assessment_status}</Badge>
             <Badge tone={child.status === 'active' ? 'success' : 'neutral'} dot>{child.status === 'active' ? 'Active' : 'Inactive (Terminated)'}</Badge>
           </div>
         </div>

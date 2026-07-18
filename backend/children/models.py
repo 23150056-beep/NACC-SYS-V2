@@ -154,6 +154,32 @@ class Child(models.Model):
     class Meta:
         db_table = "tbl_child"
 
+    # Derived 5-state pre-assessment pipeline (product decision 2026-07-18).
+    # Ordered: No Consent Yet → Not Yet Pre-Assessed → In Progress → Answered
+    # → Completed. Never stored — always computed from consent/PA/case data.
+    PA_NO_CONSENT = "No Consent Yet"
+    PA_NOT_YET = "Not Yet Pre-Assessed"
+    PA_IN_PROGRESS = "In Progress"
+    PA_ANSWERED = "Answered"
+    PA_COMPLETED = "Completed"
+
+    def pre_assessment_status(self):
+        """Mutually exclusive pipeline state. A completed pre-assessment
+        outranks a newer in-progress re-assessment (the child HAS answered),
+        and upgrades to Completed once the case tracker reaches counseling
+        (assessment proper underway). Status strings are compared as literals
+        so this app never imports clinical. Iterates .all() so callers'
+        prefetch_related keeps list views at O(1) queries per child."""
+        pas = self.pre_assessments.all()
+        if any(p.status == "completed" for p in pas):
+            return (self.PA_COMPLETED if self.case_status == self.STAGE_COUNSELING
+                    else self.PA_ANSWERED)
+        if pas:
+            return self.PA_IN_PROGRESS
+        if any(c.status == "signed" for c in self.consents.all()):
+            return self.PA_NOT_YET
+        return self.PA_NO_CONSENT
+
     def save(self, *args, **kwargs):
         if self.first_name or self.last_name:
             mi = f"{self.middle_initial.rstrip('.')}." if self.middle_initial else ""

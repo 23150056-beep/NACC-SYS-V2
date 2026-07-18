@@ -82,7 +82,7 @@ class MonitoringListView(generics.GenericAPIView):
         role = _role(request)
         children = (Child.objects.exclude(status=Child.INACTIVE)
                     .select_related("assigned_psychologist")
-                    .prefetch_related("pre_assessments__instruments"))
+                    .prefetch_related("pre_assessments__instruments", "consents"))
         if role == Role.PSYCHOLOGIST:
             children = children.filter(assigned_psychologist=request.user)
         children = list(children)
@@ -123,7 +123,7 @@ class MonitoringListView(generics.GenericAPIView):
                 "case_type": c.case_type or None,
                 "psychologist_name": (getattr(psy, "fullname", "") or getattr(psy, "username", "")) or None,
                 "case_status": c.case_status,
-                "pre_assessment_status": "Answered" if completed else "Not yet",
+                "pre_assessment_status": c.pre_assessment_status(),
                 "latest_classification": (res.classification or None) if res else None,
                 "last_activity": last_activity.isoformat() if last_activity else None,
                 "next_session": (tz.localtime(next_appt[c.id]).strftime("%Y-%m-%d %H:%M")

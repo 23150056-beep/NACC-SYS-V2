@@ -4,6 +4,7 @@ import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { Card, Button, Badge, Input, Select, FormField, Alert, EmptyState, Avatar, Icon, iconBtn, hoverLift, PAGE } from '../ui';
+import { PA_STATUSES, PA_STATUS_TONES } from '../config/caseData';
 import { printBlankForm } from '../utils/printForm';
 import InstrumentFormDrawer, { EMPTY_INSTRUMENT } from '../components/InstrumentFormDrawer';
 
@@ -32,6 +33,7 @@ export default function PreAssessment() {
   const [step, setStep] = useState(0);
   const [maxStep, setMaxStep] = useState(0);
   const [children, setChildren] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('all'); // pipeline-status chip
   const [child, setChild] = useState(null);
   const [pa, setPa] = useState(null); // the in-progress PreAssessment
   const [consents, setConsents] = useState([]);
@@ -144,31 +146,62 @@ export default function PreAssessment() {
 
       {error && <Alert tone="danger" icon={<Icon name="alert-triangle" size={18} />} style={{ marginBottom: 14 }}>{error}</Alert>}
 
-      {step === 0 && (
-        <Card eyebrow="Step 1" title="Select a child" padding="22px">
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
-            Start a guided pre-assessment for one of your assigned children.
-          </p>
-          {children.length === 0 ? (
-            <EmptyState icon={<Icon name="users" size={24} />} title="No assigned children" description="Ask the administrator or staff to assign children to you." />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {children.map((c) => (
-                <button key={c.id} onClick={() => start(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', transition: 'var(--transition-base)' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface)')}>
-                  <Avatar name={c.fullname} tone="brand" size="sm" />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{c.fullname}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.case_type || 'No case type'} · Pre-assessment: {c.pre_assessment_status}</div>
+      {step === 0 && (() => {
+        // Categorized picker: chip filter + pipeline-order sort (earliest
+        // stage first — the children with the most work left float to the top).
+        const counts = children.reduce((acc, c) => {
+          acc[c.pre_assessment_status] = (acc[c.pre_assessment_status] || 0) + 1;
+          return acc;
+        }, {});
+        const visible = children
+          .filter((c) => statusFilter === 'all' || c.pre_assessment_status === statusFilter)
+          .sort((a, b) => PA_STATUSES.indexOf(a.pre_assessment_status) - PA_STATUSES.indexOf(b.pre_assessment_status)
+            || a.fullname.localeCompare(b.fullname, undefined, { sensitivity: 'base' }));
+        const chips = [{ key: 'all', label: 'All', count: children.length },
+          ...PA_STATUSES.map((s) => ({ key: s, label: s, count: counts[s] || 0 }))];
+        return (
+          <Card eyebrow="Step 1" title="Select a child" padding="22px">
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
+              Start a guided pre-assessment for one of your assigned children.
+            </p>
+            {children.length === 0 ? (
+              <EmptyState icon={<Icon name="users" size={24} />} title="No assigned children" description="Ask the administrator or staff to assign children to you." />
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                  {chips.map((f) => (
+                    <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-sans)', background: statusFilter === f.key ? 'var(--blue-600)' : 'var(--ink-50)', color: statusFilter === f.key ? '#fff' : 'var(--text-muted)', border: `1px solid ${statusFilter === f.key ? 'var(--blue-600)' : 'var(--border)'}` }}>
+                      {f.label}
+                      <span className="racco-mono" style={{ fontSize: 11, opacity: 0.85 }}>{f.count}</span>
+                    </button>
+                  ))}
+                </div>
+                {visible.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '10px 2px' }}>
+                    No children in “{statusFilter}”.
                   </div>
-                  <Badge tone={c.pre_assessment_status === 'Answered' ? 'success' : 'amber'} size="sm">{c.pre_assessment_status}</Badge>
-                  <Icon name="chevron-right" size={16} style={{ color: 'var(--text-faint)' }} />
-                </button>
-              ))}
-            </div>
-          )}
-        </Card>
-      )}
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {visible.map((c) => (
+                      <button key={c.id} onClick={() => start(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', transition: 'var(--transition-base)' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface)')}>
+                        <Avatar name={c.fullname} tone="brand" size="sm" />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{c.fullname}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.case_type || 'No case type'} · Pre-assessment: {c.pre_assessment_status}</div>
+                        </div>
+                        <Badge tone={PA_STATUS_TONES[c.pre_assessment_status] || 'neutral'} size="sm" dot>{c.pre_assessment_status}</Badge>
+                        <Icon name="chevron-right" size={16} style={{ color: 'var(--text-faint)' }} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+        );
+      })()}
 
       {step === 1 && (
         <ConsentStep child={child} consents={consents} templates={consentTemplates}

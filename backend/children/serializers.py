@@ -63,8 +63,8 @@ class ChildSerializer(serializers.ModelSerializer):
         read_only_fields = ["case_status", "updated_at", "fullname"]
 
     def get_pre_assessment_status(self, obj):
-        return "Answered" if any(
-            p.status == "completed" for p in obj.pre_assessments.all()) else "Not yet"
+        # 5-state pipeline status; see Child.pre_assessment_status.
+        return obj.pre_assessment_status()
 
     def get_instruments_used(self, obj):
         titles = []

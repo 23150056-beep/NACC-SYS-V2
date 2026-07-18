@@ -57,7 +57,7 @@ def compute_alerts(children_qs):
             add(c, "consent_missing",
                 "Pre-assessment in progress without a signed consent.", "danger")
 
-        # 2. Pre-assessment still "Not yet" too long after intake.
+        # 2. No completed pre-assessment too long after intake.
         if not completed_pas and c.created_at and \
                 (today - c.created_at.date()).days > PRE_ASSESSMENT_LAG_DAYS:
             add(c, "pre_assessment_overdue",
