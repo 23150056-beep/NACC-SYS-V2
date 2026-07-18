@@ -31,7 +31,10 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserWriteSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    """Passwords are deliberately NOT accepted here — admins never choose
+    another user's password. Creation issues a server-generated temporary
+    password (see UserViewSet.create); later changes go through the
+    reset-password action or the user's own change-password endpoint."""
     # Email IS the username — the field is optional and derived from email.
     username = serializers.CharField(required=False, allow_blank=True)
 
@@ -39,20 +42,20 @@ class UserWriteSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "email", "username", "first_name", "last_name",
-            "middle_initial", "contact_details", "role", "status", "password",
+            "middle_initial", "contact_details", "role", "status",
         ]
 
     def create(self, validated_data):
-        password = validated_data.pop("password", None) or "changeme123"
         if not validated_data.get("username"):
             validated_data["username"] = validated_data.get("email")
         user = User(**validated_data)
-        user.set_password(password)
+        # The view sets the real temp password right after; the unusable
+        # placeholder guarantees no login window exists before it does.
+        user.set_unusable_password()
         user.save()
         return user
 
     def update(self, instance, validated_data):
-        password = validated_data.pop("password", None)
         # A role cannot be changed once it has been assigned (adviser).
         if instance.role_id is not None:
             validated_data.pop("role", None)
@@ -61,8 +64,6 @@ class UserWriteSerializer(serializers.ModelSerializer):
         # Keep username in sync with email (email is the username).
         if validated_data.get("email"):
             instance.username = validated_data["email"]
-        if password:
-            instance.set_password(password)
         instance.save()
         return instance
 

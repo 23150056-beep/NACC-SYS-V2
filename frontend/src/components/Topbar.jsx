@@ -14,6 +14,7 @@ const SCREEN_TITLES = {
   '/schedule': ['Calendar', 'Appointments & psychologist availability'],
   '/reports': ['Results & Reports', 'Manual result entries & uploaded psychological reports'],
   '/users': ['User Management', 'Accounts & roles'],
+  '/users/handoffs': ['Credential Handoffs', 'Temporary passwords awaiting physical handoff'],
   '/settings': ['System Settings', 'Agency configuration'],
 };
 

@@ -16,6 +16,7 @@ import Monitoring from './pages/Monitoring';
 import AgencySummary from './pages/AgencySummary';
 import Settings from './pages/Settings';
 import Users from './pages/Users';
+import CredentialHandoffs from './pages/CredentialHandoffs';
 import Instruments from './pages/Instruments';
 import PreAssessment from './pages/PreAssessment';
 import Schedule from './pages/Schedule';
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="/monitoring" element={<ProtectedRoute roles={['Administrator', 'Staff', 'Psychologist']}><Shell><Monitoring /></Shell></ProtectedRoute>} />
           <Route path="/reports/summary" element={<ProtectedRoute roles={['Administrator', 'Staff']}><Shell><AgencySummary /></Shell></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute roles={['Administrator']}><Shell><Users /></Shell></ProtectedRoute>} />
+          <Route path="/users/handoffs" element={<ProtectedRoute roles={['Administrator']}><Shell><CredentialHandoffs /></Shell></ProtectedRoute>} />
           <Route path="/samd" element={<ProtectedRoute roles={['Administrator']}><Shell><SamdReadiness /></Shell></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute roles={['Administrator']}><Shell><Settings /></Shell></ProtectedRoute>} />
           </Routes>

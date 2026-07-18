@@ -114,9 +114,21 @@ class UserViewSet(viewsets.ModelViewSet):
             entity_label=(user.fullname or user.email),
             entity_id=user.id)
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
+        """Create a user with a server-generated temporary password, returned
+        exactly once (same contract as reset_password). Any client-supplied
+        password is ignored by the serializer."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        temp_password = _generate_temp_password()
+        user.set_password(temp_password)
+        user.must_change_password = True
+        user.save(update_fields=["password", "must_change_password", "updated_at"])
         self._log(user, ActivityLog.CREATED)
+        data = UserSerializer(user).data
+        data["temp_password"] = temp_password
+        return Response(data, status=status.HTTP_201_CREATED)
 
     def perform_update(self, serializer):
         user = serializer.save()

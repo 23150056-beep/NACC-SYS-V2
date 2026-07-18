@@ -20,7 +20,9 @@ const NAV = [
   { to: '/reports', label: 'Results & Reports', icon: 'clipboard-check', roles: ['Administrator', 'Psychologist', 'Staff'] },
   { section: 'Governance' },
   { to: '/reports/summary', label: 'Agency Summary', icon: 'bar-chart-3', roles: ['Administrator', 'Staff'] },
-  { to: '/users', label: 'User Management', icon: 'user-cog', roles: ['Administrator'] },
+  // end: exact match only, so User Management doesn't stay lit on /users/handoffs.
+  { to: '/users', label: 'User Management', icon: 'user-cog', roles: ['Administrator'], end: true },
+  { to: '/users/handoffs', label: 'Credential Handoffs', icon: 'key-round', roles: ['Administrator'] },
   // { to: '/samd', label: 'SAMD Readiness', icon: 'shield-check', roles: ['Administrator'] }, // hidden for now, re-enable when ready
   { to: '/settings', label: 'Settings', icon: 'settings', roles: ['Administrator'] },
 ];

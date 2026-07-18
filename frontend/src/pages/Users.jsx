@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useActivity } from '../context/ActivityContext';
 import { Card, Button, Alert, Input, Select, FormField, Avatar, RoleBadge, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { useToast } from '../context/ToastContext';
 
-const EMPTY = { email: '', first_name: '', last_name: '', middle_initial: '', contact_details: '', role: '', password: '' };
+// No password field: the server generates a temporary password on create and
+// returns it exactly once — admins never choose another user's password.
+const EMPTY = { email: '', first_name: '', last_name: '', middle_initial: '', contact_details: '', role: '' };
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -17,6 +20,7 @@ export default function Users() {
   const [resetResult, setResetResult] = useState(null);
   const { refresh: refreshActivity } = useActivity();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const load = () => api.get('/users/').then((r) => setUsers(r.data));
   useEffect(() => {
@@ -25,18 +29,24 @@ export default function Users() {
   }, []);
 
   const openCreate = () => { setError(''); setForm({ ...EMPTY }); };
-  const openEdit = (u) => { setError(''); setForm({ ...EMPTY, ...u, password: '' }); };
+  const openEdit = (u) => { setError(''); setForm({ ...EMPTY, ...u }); };
 
   const save = async (e) => {
     e.preventDefault();
     setError('');
     try {
       const payload = { ...form };
-      delete payload.role_name; delete payload.fullname;
-      if (!payload.password) delete payload.password;
-      if (form.id) await api.put(`/users/${form.id}/`, payload);
-      else await api.post('/users/', payload);
-      toast.success(form.id ? 'User updated' : 'User added');
+      delete payload.role_name; delete payload.fullname; delete payload.must_change_password;
+      if (form.id) {
+        await api.put(`/users/${form.id}/`, payload);
+        toast.success('User updated');
+      } else {
+        const { data } = await api.post('/users/', payload);
+        toast.success('User added');
+        // Same one-time display contract as reset: show the generated temp
+        // password now — the server can never show it again.
+        setResetResult({ user: data, temp_password: data.temp_password });
+      }
       setForm(null);
       load();
       refreshActivity();
@@ -79,7 +89,8 @@ export default function Users() {
 
   return (
     <div style={{ ...PAGE, position: 'relative' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }}>
+        <Button variant="secondary" onClick={() => navigate('/users/handoffs')} iconLeft={<Icon name="printer" size={17} />}>Credential Handoffs</Button>
         <Button variant="primary" onClick={openCreate} iconLeft={<Icon name="user-plus" size={17} />}>Add User</Button>
       </div>
 
@@ -155,9 +166,13 @@ export default function Users() {
                   </Select>
                 </FormField>
               )}
-              <FormField label={form.id ? 'Password (leave blank to keep)' : 'Password'}>
-                <Input type="password" value={form.password || ''} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-              </FormField>
+              {!form.id && (
+                <Alert tone="info" icon={<Icon name="key-round" size={18} />}>
+                  A temporary password is generated automatically when you save.
+                  It is shown once — hand it to the user, and they must set their
+                  own password at first login.
+                </Alert>
+              )}
             </div>
             <div style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
               <Button type="submit" variant="primary" fullWidth iconLeft={<Icon name="save" size={16} />}>Save User</Button>

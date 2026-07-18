@@ -66,6 +66,66 @@ class UserManagementTest(APITestCase):
         self.assertIn("Staff", names)
 
 
+class CreateUserTempPasswordTest(APITestCase):
+    """User creation issues a server-generated temporary password, returned
+    exactly once, and forces a change at first login — the admin never
+    chooses another user's password (same rule as reset-password)."""
+
+    def setUp(self):
+        self.admin_role = Role.objects.create(role_name=Role.ADMINISTRATOR)
+        self.staff_role = Role.objects.create(role_name=Role.STAFF)
+        self.admin = User.objects.create_user(
+            email="admin@racco1.gov.ph", username="admin", password="admin1234",
+            role=self.admin_role)
+
+    def _auth(self, email, password):
+        token = self.client.post("/api/auth/login/", {
+            "email": email, "password": password}).data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer " + token)
+
+    def _login(self, email, password):
+        return self.client.post("/api/auth/login/", {"email": email, "password": password})
+
+    def test_create_returns_temp_password_and_forces_change(self):
+        self._auth("admin@racco1.gov.ph", "admin1234")
+        resp = self.client.post("/api/users/", {
+            "email": "new@racco1.gov.ph", "first_name": "New", "last_name": "Staff",
+            "role": self.staff_role.id})
+        self.assertEqual(resp.status_code, 201)
+        temp_password = resp.data["temp_password"]
+        self.assertTrue(temp_password)
+
+        user = User.objects.get(email="new@racco1.gov.ph")
+        self.assertTrue(user.must_change_password)
+
+        login = self._login("new@racco1.gov.ph", temp_password)
+        self.assertEqual(login.status_code, 200)
+        self.assertTrue(login.data["user"]["must_change_password"])
+
+    def test_client_supplied_password_on_create_is_ignored(self):
+        self._auth("admin@racco1.gov.ph", "admin1234")
+        resp = self.client.post("/api/users/", {
+            "email": "new@racco1.gov.ph", "role": self.staff_role.id,
+            "password": "AdminPicked9"})
+        self.assertEqual(resp.status_code, 201)
+        # The admin-typed password must NOT work — only the generated temp does.
+        self.assertEqual(self._login("new@racco1.gov.ph", "AdminPicked9").status_code, 401)
+        self.assertEqual(
+            self._login("new@racco1.gov.ph", resp.data["temp_password"]).status_code, 200)
+
+    def test_client_supplied_password_on_update_is_ignored(self):
+        self._auth("admin@racco1.gov.ph", "admin1234")
+        target = User.objects.create_user(
+            email="s@racco1.gov.ph", username="s", password="staffPass1",
+            role=self.staff_role)
+        resp = self.client.put(f"/api/users/{target.id}/", {
+            "email": "s@racco1.gov.ph", "password": "Hijacked99"})
+        self.assertEqual(resp.status_code, 200)
+        # The existing password still works; the admin-typed one does not.
+        self.assertEqual(self._login("s@racco1.gov.ph", "staffPass1").status_code, 200)
+        self.assertEqual(self._login("s@racco1.gov.ph", "Hijacked99").status_code, 401)
+
+
 class PsychologistListTest(APITestCase):
     def setUp(self):
         self.admin_role = Role.objects.create(role_name=Role.ADMINISTRATOR)
