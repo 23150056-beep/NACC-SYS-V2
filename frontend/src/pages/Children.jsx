@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useActivity } from '../context/ActivityContext';
@@ -46,6 +46,27 @@ function StatusChip({ child, size = 'sm' }) {
   return <Badge tone="success" size={size} dot>Active{child.case_type ? ` · ${child.case_type}` : ''}</Badge>;
 }
 
+// Purpose labels mirror Schedule.jsx.
+const PURPOSE_LABEL = { pre_assessment: 'Pre-Assessment', session: 'Session', follow_up: 'Follow-up' };
+// Local YYYY-MM-DD (never toISOString — it shifts the date in UTC+8 evenings).
+const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const fmtDay = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+// Roster schedule chip: today's session (amber) or next booking within the
+// 7-day window (neutral), else nothing.
+function ScheduleChip({ appts = [] }) {
+  if (appts.length === 0) return <span style={{ color: 'var(--text-faint)' }}>—</span>;
+  const today = localDate(new Date());
+  const next = appts[0]; // pre-sorted by start
+  const isToday = next.start.slice(0, 10) === today;
+  return (
+    <Badge tone={isToday ? 'amber' : 'neutral'} size="sm" dot>
+      {isToday ? `Today · ${fmtTime(next.start)}` : `${fmtDay(next.start)}`}
+    </Badge>
+  );
+}
+
 const EMPTY = {
   first_name: '', middle_initial: '', last_name: '',
   birth_date: '', gender: '', province: '', municipality: '', barangay: '',
@@ -60,21 +81,31 @@ export default function Children() {
   const { user } = useAuth();
   const { refresh: refreshActivity } = useActivity();
   const toast = useToast();
+  const navigate = useNavigate();
   const canManage = ['Administrator', 'Staff'].includes(user?.role_name);
   const isAdmin = user?.role_name === 'Administrator';
   const isPsych = user?.role_name === 'Psychologist';
   const [children, setChildren] = useState([]);
   const [psychologists, setPsychologists] = useState([]);
   const [blocks, setBlocks] = useState([]);
+  // childId -> [scheduled appointments in the next 7 days], sorted by start.
+  const [apptsByChild, setApptsByChild] = useState({});
   const [searchParams, setSearchParams] = useSearchParams();
   const q = searchParams.get('q') || '';
   const [status, setStatus] = useState('active');
   const [sortMode, setSortMode] = useState('newest');
+  const [reasonFilter, setReasonFilter] = useState(''); // Archived tab only (admin/staff)
   const [sel, setSel] = useState(null); // detail drawer record
   const [form, setForm] = useState(null); // add/edit drawer
   const [terminating, setTerminating] = useState(null); // terminate modal record
   const [error, setError] = useState('');
   const others = usePresence(form?.id || sel?.id);
+  // The old standalone Archive page folded in here: admin/staff viewing the
+  // Archived filter get the termination-detail columns + reopen; psychologists
+  // keep the plain roster (they can't reopen, see decision 2026-07-18).
+  const showArchiveColumns = canManage && status === 'inactive';
+
+  useEffect(() => { if (status !== 'inactive') setReasonFilter(''); }, [status]);
 
   const load = () => {
     // Include inactive (terminated) cases — the V2 roster shows them with chips.
@@ -83,6 +114,20 @@ export default function Children() {
     api.get('/psychologists/').then((r) => setPsychologists(r.data)).catch(() => {});
     // Availability blocks power the assignment-time comparison panel — admin/staff only.
     if (canManage) api.get('/availability/').then((r) => setBlocks(r.data)).catch(() => {});
+    // Upcoming (next 7 days) scheduled appointments → roster chips + drawer list.
+    // Role-scoped server-side: psychologists get only their own caseload.
+    const today = new Date();
+    const weekAhead = new Date(today); weekAhead.setDate(today.getDate() + 7);
+    api.get(`/appointments/?from=${localDate(today)}&to=${localDate(weekAhead)}`)
+      .then((r) => {
+        const map = {};
+        (r.data || [])
+          .filter((a) => a.status === 'scheduled')
+          .sort((a, b) => a.start.localeCompare(b.start))
+          .forEach((a) => { (map[a.child] ||= []).push(a); });
+        setApptsByChild(map);
+      })
+      .catch(() => setApptsByChild({}));
   };
   useEffect(() => { load(); }, []);
 
@@ -102,6 +147,7 @@ export default function Children() {
   const visible = rows
     .filter((c) => c.fullname.toLowerCase().includes(q.toLowerCase()) || c.ref.toLowerCase().includes(q.toLowerCase()))
     .filter((c) => status === 'all' || c.status === status)
+    .filter((c) => !showArchiveColumns || !reasonFilter || c.termination?.reason_category === reasonFilter)
     .sort((a, b) => sortMode === 'newest'
       ? b.id - a.id  // LIFO: newest record first
       : a.fullname.localeCompare(b.fullname, undefined, { sensitivity: 'base' }));
@@ -227,6 +273,14 @@ export default function Children() {
               <button key={k} onClick={() => setSortMode(k)} style={{ padding: '5px 12px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12, background: sortMode === k ? 'var(--blue-600)' : 'transparent', color: sortMode === k ? '#fff' : 'var(--text-muted)' }}>{label}</button>
             ))}
           </div>
+          {showArchiveColumns && (
+            <div style={{ width: 220 }}>
+              <Select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)} aria-label="Filter by termination reason">
+                <option value="">All termination reasons</option>
+                {TERMINATION_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </Select>
+            </div>
+          )}
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
           Showing <strong style={{ color: 'var(--text-strong)' }}>{visible.length}</strong> of {rows.length} children
@@ -250,10 +304,13 @@ export default function Children() {
           <EmptyState icon={<Icon name="folder-search" size={24} />} title="No records found" description="Try a different name, case ID, or status filter." />
         ) : (
           <div className="racco-scroll" style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: showArchiveColumns ? 860 : 820, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                  {['Child', 'Gender / Age', 'Psychologist', 'Status'].map((h) => (
+                  {(showArchiveColumns
+                    ? ['Child', 'Case Type', 'Terminated On', 'Reason', 'Terminated By', 'Note', 'Actions']
+                    : ['Child', 'Gender / Age', 'Psychologist', 'Schedule', 'Status']
+                  ).map((h) => (
                     <th key={h} scope="col" style={{ textAlign: 'left', padding: '11px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -266,28 +323,56 @@ export default function Children() {
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                     <td style={{ padding: '11px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                        <Avatar name={c.fullname} tone="brand" size="sm" />
+                        <Avatar name={c.fullname} tone={showArchiveColumns ? 'neutral' : 'brand'} size="sm" />
                         <div style={{ minWidth: 0, maxWidth: 200 }}>
                           <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--blue-700)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.fullname}</div>
                           <div className="racco-mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.ref}</div>
                         </div>
                       </div>
                     </td>
-                    <td style={td}>{c.gender || '—'} {c.age != null ? `· ${c.age} (${c.group})` : ''}</td>
-                    <td style={td}>
-                      {c.psychologist_name
-                        ? c.psychologist_name
-                        : canManage && c.status === 'active'
-                          ? (
-                            <button title={`Assign a psychologist to ${c.fullname}`} aria-label={`Assign psychologist to ${c.fullname}`}
-                              onClick={(e) => { e.stopPropagation(); openEdit(c); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-pill)', border: '1px dashed var(--blue-300)', background: 'var(--blue-50)', color: 'var(--blue-700)', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'var(--transition-base)' }}>
-                              <Icon name="user-plus" size={13} /> Assign
-                            </button>
-                          )
-                          : '—'}
-                    </td>
-                    <td style={{ padding: '11px 16px' }}><StatusChip child={c} /></td>
+                    {showArchiveColumns ? (
+                      <>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.case_type || '—'}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }} className="racco-mono">{c.termination?.date || '—'}</td>
+                        <td style={td}>{c.termination?.reason_category
+                          ? <Badge tone="amber" size="sm" dot>{c.termination.reason_category}</Badge> : '—'}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.termination?.terminated_by || '—'}</td>
+                        <td style={{ ...td, maxWidth: 260 }}>
+                          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }} title={c.termination?.note || ''}>
+                            {c.termination?.note || '—'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '11px 16px' }}>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button title="View full record" aria-label={`View ${c.fullname}'s record`} onClick={(e) => { e.stopPropagation(); navigate(`/report/child/${c.id}`); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="eye" size={15} /></button>
+                            {isAdmin && (
+                              <button title="Reopen case" aria-label={`Reopen ${c.fullname}'s case`}
+                                onClick={(e) => { e.stopPropagation(); if (window.confirm('Reopen this case? All previous records and termination history are kept, but the psychologist assignment is cleared — assign one fresh afterwards.')) reopen(c); }}
+                                {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--success-600)')}><Icon name="rotate-ccw" size={15} /></button>
+                            )}
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={td}>{c.gender || '—'} {c.age != null ? `· ${c.age} (${c.group})` : ''}</td>
+                        <td style={td}>
+                          {c.psychologist_name
+                            ? c.psychologist_name
+                            : canManage && c.status === 'active'
+                              ? (
+                                <button title={`Assign a psychologist to ${c.fullname}`} aria-label={`Assign psychologist to ${c.fullname}`}
+                                  onClick={(e) => { e.stopPropagation(); openEdit(c); }} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-pill)', border: '1px dashed var(--blue-300)', background: 'var(--blue-50)', color: 'var(--blue-700)', fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'var(--transition-base)' }}>
+                                  <Icon name="user-plus" size={13} /> Assign
+                                </button>
+                              )
+                              : '—'}
+                        </td>
+                        <td style={td}>{c.status === 'active' ? <ScheduleChip appts={apptsByChild[c.id]} /> : <span style={{ color: 'var(--text-faint)' }}>—</span>}</td>
+                        <td style={{ padding: '11px 16px' }}><StatusChip child={c} /></td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -296,14 +381,14 @@ export default function Children() {
         )}
       </Card>
 
-      {sel && <ChildDrawer child={sel} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} isAdmin={isAdmin} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onReopen={() => { if (window.confirm('Reopen this case? All previous records and termination history are kept, but the psychologist assignment is cleared — assign one fresh afterwards.')) reopen(sel); }} onClose={() => setSel(null)} />}
+      {sel && <ChildDrawer child={sel} upcoming={apptsByChild[sel.id] || []} canEdit={canEditRecord(sel)} canTerminate={canTerminate(sel)} isAdmin={isAdmin} others={others} onEdit={() => { openEdit(sel); setSel(null); }} onTerminate={() => setTerminating(sel)} onReopen={() => { if (window.confirm('Reopen this case? All previous records and termination history are kept, but the psychologist assignment is cleared — assign one fresh afterwards.')) reopen(sel); }} onClose={() => setSel(null)} />}
       {form && <ChildForm form={form} setForm={setForm} draftKey={draftKey} psychologists={psychologists} blocks={blocks} error={error} isPsych={isPsych} isAdmin={isAdmin} others={others} onSubmit={save} onClose={() => setForm(null)} onReopen={onDupReopen} onOpenExisting={onDupOpenExisting} />}
       {terminating && <TerminateModal child={terminating} onConfirm={terminate} onClose={() => setTerminating(null)} />}
     </div>
   );
 }
 
-function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [], onEdit, onTerminate, onReopen, onClose }) {
+function ChildDrawer({ child, upcoming = [], canEdit, canTerminate, isAdmin = false, others = [], onEdit, onTerminate, onReopen, onClose }) {
   const toast = useToast();
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -439,6 +524,29 @@ function ChildDrawer({ child, canEdit, canTerminate, isAdmin = false, others = [
                 <div>
                   <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 6 }}>Medical notes</div>
                   <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0, lineHeight: 1.55 }}>{child.medical_notes}</p>
+                </div>
+              )}
+              {upcoming.length > 0 && (
+                <div>
+                  <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Upcoming appointments</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {upcoming.slice(0, 3).map((a) => {
+                      const isToday = a.start.slice(0, 10) === localDate(new Date());
+                      return (
+                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', borderRadius: 'var(--radius-md)', background: isToday ? 'var(--amber-50)' : 'var(--ink-50)', border: `1px solid ${isToday ? 'var(--amber-200)' : 'var(--border)'}` }}>
+                          <Icon name="calendar" size={15} style={{ color: isToday ? 'var(--amber-600)' : 'var(--blue-600)', flex: 'none' }} />
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>
+                              {isToday ? 'Today' : fmtDay(a.start)} · {fmtTime(a.start)}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              {PURPOSE_LABEL[a.purpose] || a.purpose}{a.psychologist_name ? ` · ${a.psychologist_name}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               {canSuggestSlots && slots?.slots?.length > 0 && (

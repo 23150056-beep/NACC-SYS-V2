@@ -8,10 +8,8 @@ const NAV = [
   { section: 'Overview' },
   { to: '/', label: 'Dashboard', icon: 'layout-dashboard', roles: ['Administrator', 'Psychologist', 'Staff'], end: true },
   { section: 'Casework' },
+  // Terminated-case archive lives inside Records (Archived filter), not its own route.
   { to: '/children', label: 'Records', icon: 'users', roles: ['Administrator', 'Psychologist', 'Staff'] },
-  // Terminated-case archive: Admin + Staff only (psychologists keep seeing
-  // their own terminated cases in Records, but have no archive feature).
-  { to: '/archive', label: 'Archive', icon: 'archive', roles: ['Administrator', 'Staff'] },
   // Same route, role-scoped label/description: admins get full catalog
   // governance, psychologists only manage their agency form templates here
   // (their instrument catalog lives inside the Pre-Assessment wizard, step 4).
@@ -23,9 +21,8 @@ const NAV = [
   { to: '/reports', label: 'Results & Reports', icon: 'clipboard-check', roles: ['Administrator', 'Psychologist', 'Staff'] },
   { section: 'Governance' },
   { to: '/reports/summary', label: 'Agency Summary', icon: 'bar-chart-3', roles: ['Administrator', 'Staff'] },
-  // end: exact match only, so User Management doesn't stay lit on /users/handoffs.
-  { to: '/users', label: 'User Management', icon: 'user-cog', roles: ['Administrator'], end: true },
-  { to: '/users/handoffs', label: 'Credential Handoffs', icon: 'key-round', roles: ['Administrator'] },
+  // Credential Handoffs lives inside User Management as a tab, not its own route.
+  { to: '/users', label: 'User Management', icon: 'user-cog', roles: ['Administrator'] },
   // { to: '/samd', label: 'SAMD Readiness', icon: 'shield-check', roles: ['Administrator'] }, // hidden for now, re-enable when ready
   { to: '/settings', label: 'Settings', icon: 'settings', roles: ['Administrator'] },
 ];
