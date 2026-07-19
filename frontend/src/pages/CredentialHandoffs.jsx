@@ -1,16 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
-import { Card, Button, Badge, Alert, EmptyState, Avatar, RoleBadge, Icon, iconBtn, hoverLift, PAGE } from '../ui';
+import { Card, Button, Badge, Alert, EmptyState, Avatar, RoleBadge, Icon, iconBtn, hoverLift } from '../ui';
 
 // Admin-only list of everyone still on a temporary password (must_change_password),
 // i.e. every account whose credentials still need to be handed over physically.
 // Passwords are generated fresh at the moment of handoff (via the existing
 // reset-password endpoint) and live ONLY in this component's state until the
 // page is refreshed — the server never stores a plaintext password.
+// Rendered as a tab inside User Management (Users.jsx), not its own route.
 export default function CredentialHandoffs() {
-  const navigate = useNavigate();
   const toast = useToast();
   const [users, setUsers] = useState([]);
   const [generated, setGenerated] = useState({}); // { userId: tempPassword }
@@ -47,10 +46,8 @@ export default function CredentialHandoffs() {
 
   return (
     <>
-      <div className="racco-no-print" style={{ ...PAGE }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <Button variant="ghost" onClick={() => navigate('/users')} iconLeft={<Icon name="arrow-left" size={16} />}>User Management</Button>
-          <div style={{ flex: 1 }} />
+      <div className="racco-no-print">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }}>
           <Button variant="secondary" disabled={busy || users.length === 0} onClick={generateAll} iconLeft={<Icon name="key-round" size={16} />}>
             {busy ? 'Generating…' : 'Generate All'}
           </Button>

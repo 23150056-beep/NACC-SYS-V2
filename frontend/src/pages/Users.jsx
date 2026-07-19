@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useActivity } from '../context/ActivityContext';
-import { Card, Button, Badge, Alert, Input, Select, FormField, Avatar, RoleBadge, EmptyState, Icon, iconBtn, hoverLift, PAGE } from '../ui';
+import { Card, Button, Badge, Alert, Input, Select, FormField, Avatar, RoleBadge, EmptyState, Icon, iconBtn, hoverLift, PAGE, Tabs } from '../ui';
 import { useToast } from '../context/ToastContext';
+import CredentialHandoffs from './CredentialHandoffs';
 
 // No password field: the server generates a temporary password on create and
 // returns it exactly once — admins never choose another user's password.
 const EMPTY = { email: '', first_name: '', last_name: '', middle_initial: '', contact_details: '', role: '' };
 
 export default function Users() {
+  const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [form, setForm] = useState(null);
@@ -20,7 +21,6 @@ export default function Users() {
   const [resetResult, setResetResult] = useState(null);
   const { refresh: refreshActivity } = useActivity();
   const toast = useToast();
-  const navigate = useNavigate();
 
   const load = () => api.get('/users/').then((r) => setUsers(r.data));
   useEffect(() => {
@@ -88,59 +88,76 @@ export default function Users() {
 
   const toneFor = (role) => (role === 'Administrator' ? 'brand' : role === 'Psychologist' ? 'red' : 'amber');
 
+  const pendingHandoffs = users.filter((u) => u.must_change_password).length;
+
   return (
     <div style={{ ...PAGE, position: 'relative' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }}>
-        <Button variant="secondary" onClick={() => navigate('/users/handoffs')} iconLeft={<Icon name="printer" size={17} />}>Credential Handoffs</Button>
-        <Button variant="primary" onClick={openCreate} iconLeft={<Icon name="user-plus" size={17} />}>Add User</Button>
-      </div>
+      <Tabs
+        tabs={[
+          { id: 'users', label: 'Users' },
+          { id: 'handoffs', label: 'Credential Handoffs', count: pendingHandoffs || undefined },
+        ]}
+        active={tab}
+        onChange={setTab}
+        style={{ marginBottom: 16 }}
+      />
 
-      <Card padding="0">
-        {users.length === 0 ? (
-          <EmptyState icon={<Icon name="users" size={24} />} title="No users yet" description="Add agency accounts to get started." />
-        ) : (
-          <div className="racco-scroll" style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
-                  {['Name', 'Email', 'Contact', 'Role', 'Actions'].map((h) => (
-                    <th key={h} scope="col" style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid var(--ink-100)' }}>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                        <Avatar name={u.fullname || u.username || u.email} tone={toneFor(u.role_name)} size="sm" />
-                        <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{u.fullname || u.username}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-body)' }} className="racco-mono">{u.email}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }} className="racco-mono">{u.contact_details || '—'}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {u.role_name ? <RoleBadge role={u.role_name} /> : '—'}
-                        {u.admin_takeover_pending && <Badge tone="warning" size="sm" dot>Takeover pending</Badge>}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button title="Edit user" aria-label={`Edit ${u.fullname || u.email}`} onClick={() => openEdit(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
-                        {/* Archived users never appear in this list (see load()), but guard
-                            anyway in case a future view surfaces them here too. */}
-                        <button title="Reset password" aria-label={`Reset password for ${u.fullname || u.email}`} disabled={u.status === 'archived'} onClick={() => resetPassword(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={{ ...iconBtn('var(--amber-500)'), ...(u.status === 'archived' ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}><Icon name="key-round" size={15} /></button>
-                        <button title="Deactivate user" aria-label={`Deactivate ${u.fullname || u.email}`} onClick={() => archive(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="user-x" size={15} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {tab === 'handoffs' ? (
+        <CredentialHandoffs />
+      ) : (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <Button variant="primary" onClick={openCreate} iconLeft={<Icon name="user-plus" size={17} />}>Add User</Button>
           </div>
-        )}
-      </Card>
+
+          <Card padding="0">
+            {users.length === 0 ? (
+              <EmptyState icon={<Icon name="users" size={24} />} title="No users yet" description="Add agency accounts to get started." />
+            ) : (
+              <div className="racco-scroll" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--border)' }}>
+                      {['Name', 'Email', 'Contact', 'Role', 'Actions'].map((h) => (
+                        <th key={h} scope="col" style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((u) => (
+                      <tr key={u.id} style={{ borderBottom: '1px solid var(--ink-100)' }}>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                            <Avatar name={u.fullname || u.username || u.email} tone={toneFor(u.role_name)} size="sm" />
+                            <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>{u.fullname || u.username}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-body)' }} className="racco-mono">{u.email}</td>
+                        <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }} className="racco-mono">{u.contact_details || '—'}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            {u.role_name ? <RoleBadge role={u.role_name} /> : '—'}
+                            {u.admin_takeover_pending && <Badge tone="warning" size="sm" dot>Takeover pending</Badge>}
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button title="Edit user" aria-label={`Edit ${u.fullname || u.email}`} onClick={() => openEdit(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={15} /></button>
+                            {/* Archived users never appear in this list (see load()), but guard
+                                anyway in case a future view surfaces them here too. */}
+                            <button title="Reset password" aria-label={`Reset password for ${u.fullname || u.email}`} disabled={u.status === 'archived'} onClick={() => resetPassword(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={{ ...iconBtn('var(--amber-500)'), ...(u.status === 'archived' ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}><Icon name="key-round" size={15} /></button>
+                            <button title="Deactivate user" aria-label={`Deactivate ${u.fullname || u.email}`} onClick={() => archive(u)} {...hoverLift({ lift: -1, shadow: 'var(--shadow-md)' })} style={iconBtn('var(--red-500)')}><Icon name="user-x" size={15} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
 
       {form && (
         <div onClick={() => setForm(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(14,19,29,0.32)', display: 'flex', justifyContent: 'flex-end', zIndex: 70, animation: 'racco-fade-in var(--dur-base) var(--ease-out)' }}>

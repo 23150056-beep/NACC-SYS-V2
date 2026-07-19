@@ -9,13 +9,11 @@ import { useActivity } from '../context/ActivityContext';
 const SCREEN_TITLES = {
   '/': ['Dashboard', 'Regional overview of cases & activity'],
   '/children': ['Records', 'Child profiles, assigned psychologist & case status'],
-  '/archive': ['Archive', 'Terminated cases & termination details'],
   '/instruments': ['Pre-Assessment Instruments', 'Instrument title catalog & agency form templates'],
   '/pre-assessment': ['Pre-Assessment', 'Guided flow: consent, interview, instruments, problems'],
   '/schedule': ['Calendar', 'Appointments & psychologist availability'],
   '/reports': ['Results & Reports', 'Manual result entries & uploaded psychological reports'],
   '/users': ['User Management', 'Accounts & roles'],
-  '/users/handoffs': ['Credential Handoffs', 'Temporary passwords awaiting physical handoff'],
   '/settings': ['System Settings', 'Agency configuration'],
   '/profile': ['My Profile', 'Optional account details (prototype preview)'],
 };
