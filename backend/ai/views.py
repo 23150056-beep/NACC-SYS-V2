@@ -16,7 +16,7 @@ from ai.briefs import build_brief_prompt, latest_brief_job, prefetch_briefs
 from ai.models import AISetting, AIJob
 from ai.services import AIUnavailable, DISCLAIMER, feature_enabled, run_job
 from children.models import Child
-from clinical.models import PsychologicalReport, CaseStudy
+from clinical.models import PsychologicalReport, CaseReferral
 from scheduling.models import Appointment
 
 
@@ -229,27 +229,27 @@ class PrefetchBriefsView(APIView):
         return Response({"queued": queued, "skipped": skipped})
 
 
-class CaseStudySummaryDraftView(APIView):
-    """F3 — draft structured fields from the social worker's case study."""
+class CaseReferralSummaryDraftView(APIView):
+    """F3 — draft structured fields from the social worker's case referral."""
     permission_classes = [CanViewResults]
 
-    def post(self, request, case_study_id):
+    def post(self, request, case_referral_id):
         if not feature_enabled("doc_intelligence"):
             return _gate("doc_intelligence")
         try:
-            cs = CaseStudy.objects.select_related("child").get(pk=case_study_id)
-        except CaseStudy.DoesNotExist:
+            cs = CaseReferral.objects.select_related("child").get(pk=case_referral_id)
+        except CaseReferral.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         if _role(request) == Role.PSYCHOLOGIST and \
                 cs.child.assigned_psychologist_id != request.user.id:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         if not cs.extracted_text:
             return Response(
-                {"detail": "No extractable text in this case study (scanned or Word file)."},
+                {"detail": "No extractable text in this case referral (scanned or Word file)."},
                 status=status.HTTP_400_BAD_REQUEST)
-        prompt = prompts.CASE_STUDY.format(text=cs.extracted_text[:12000])
+        prompt = prompts.CASE_REFERRAL.format(text=cs.extracted_text[:12000])
         try:
-            text, job = run_job("case_study", f"casestudy:{cs.id}", prompt,
+            text, job = run_job("case_referral", f"casereferral:{cs.id}", prompt,
                                 prompts.SYSTEM, request.user)
         except AIUnavailable:
             return _gate("doc_intelligence")
@@ -259,14 +259,14 @@ class CaseStudySummaryDraftView(APIView):
         return Response({"draft": text, "job_id": job.id, "disclaimer": DISCLAIMER})
 
 
-class ConfirmCaseStudySummaryView(APIView):
-    """Human-in-the-loop confirm/edit of the case-study draft."""
+class ConfirmCaseReferralSummaryView(APIView):
+    """Human-in-the-loop confirm/edit of the case-referral draft."""
     permission_classes = [CanViewResults]
 
-    def post(self, request, case_study_id):
+    def post(self, request, case_referral_id):
         try:
-            cs = CaseStudy.objects.select_related("child").get(pk=case_study_id)
-        except CaseStudy.DoesNotExist:
+            cs = CaseReferral.objects.select_related("child").get(pk=case_referral_id)
+        except CaseReferral.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         role = _role(request)
         can = role == Role.ADMINISTRATOR or (
@@ -282,7 +282,7 @@ class ConfirmCaseStudySummaryView(APIView):
         cs.ai_summary = text
         cs.ai_summary_confirmed = True
         cs.save(update_fields=["ai_summary", "ai_summary_confirmed"])
-        _set_confirm_outcome("case_study", f"casestudy:{cs.id}", text)
+        _set_confirm_outcome("case_referral", f"casereferral:{cs.id}", text)
         return Response({"ai_summary": cs.ai_summary, "confirmed": True})
 
 

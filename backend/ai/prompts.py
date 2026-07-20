@@ -50,13 +50,13 @@ professional English:
 {stats}
 """
 
-CASE_STUDY = """From the social worker's case study text below, draft:
+CASE_REFERRAL = """From the social worker's case referral text below, draft:
 1. Background and family/social context (3-5 bullet points)
 2. Presenting concerns (2-4 bullet points)
 3. Recommendations noted by the author (1-3 bullet points)
 
 Only use information present in the text.
 
-CASE STUDY TEXT:
+CASE REFERRAL TEXT:
 {text}
 """

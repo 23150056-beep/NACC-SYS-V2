@@ -4,7 +4,7 @@ from clinical.views import (
     InstrumentCatalogViewSet, AgencyFormTemplateViewSet,
     ConsentRecordViewSet, ClinicalInterviewRecordViewSet, ProblemEntryViewSet,
     PreAssessmentViewSet, PsychologicalReportViewSet, RemarkNoteViewSet,
-    TreatmentPlanViewSet, ResultEntryViewSet, CaseStudyViewSet,
+    TreatmentPlanViewSet, ResultEntryViewSet, CaseReferralViewSet,
     OpinionnaireInviteViewSet, PublicOpinionnaireView,
 )
 from clinical.reports_views import (
@@ -22,7 +22,7 @@ router.register("report-files", PsychologicalReportViewSet, basename="report-fil
 router.register("remarks", RemarkNoteViewSet, basename="remark")
 router.register("treatment-plans", TreatmentPlanViewSet, basename="treatment-plan")
 router.register("result-entries", ResultEntryViewSet, basename="result-entry")
-router.register("case-studies", CaseStudyViewSet, basename="case-study")
+router.register("case-referrals", CaseReferralViewSet, basename="case-referral")
 router.register("opinionnaire-invites", OpinionnaireInviteViewSet, basename="opinionnaire-invite")
 router.register("opinionnaire", PublicOpinionnaireView, basename="opinionnaire-public")
 

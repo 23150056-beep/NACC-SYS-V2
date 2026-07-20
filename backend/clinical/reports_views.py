@@ -12,12 +12,12 @@ from children.serializers import ChildSerializer
 from clinical import reports
 from clinical.models import (
     PreAssessment, ResultEntry, RemarkNote, TreatmentPlan,
-    PsychologicalReport, ProblemEntry, CaseStudy, OpinionnaireInvite,
+    PsychologicalReport, ProblemEntry, CaseReferral, OpinionnaireInvite,
 )
 from clinical.serializers import (
     PreAssessmentSerializer, ResultEntrySerializer, RemarkNoteSerializer,
     TreatmentPlanSerializer, PsychologicalReportSerializer, ProblemEntrySerializer,
-    CaseStudySerializer, OpinionnaireInviteSerializer, ClinicalInterviewRecordSerializer,
+    CaseReferralSerializer, OpinionnaireInviteSerializer, ClinicalInterviewRecordSerializer,
 )
 
 
@@ -45,7 +45,7 @@ class ChildReportView(generics.GenericAPIView):
         plans = child.treatment_plans.select_related("author")
         files = child.psych_reports.select_related("author")
         problems = child.problems.all()
-        case_studies = child.case_studies.select_related("uploaded_by")
+        case_referrals = child.case_referrals.select_related("uploaded_by")
         opinionnaires = child.opinionnaire_invites.select_related("template")
         interviews = child.clinical_interviews.select_related("template", "interviewer")
 
@@ -68,7 +68,7 @@ class ChildReportView(generics.GenericAPIView):
             "treatment_plans": TreatmentPlanSerializer(plans, many=True).data,
             "reports": PsychologicalReportSerializer(files, many=True).data,
             "problems": ProblemEntrySerializer(problems, many=True).data,
-            "case_studies": CaseStudySerializer(case_studies, many=True).data,
+            "case_referrals": CaseReferralSerializer(case_referrals, many=True).data,
             "opinionnaires": OpinionnaireInviteSerializer(opinionnaires, many=True).data,
         })
 

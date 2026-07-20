@@ -209,20 +209,20 @@ class PsychologicalReport(models.Model):
         ordering = ["-created_at"]
 
 
-def case_study_upload_path(instance, filename):
+def case_referral_upload_path(instance, filename):
     ext = (filename.rsplit(".", 1)[-1] if "." in filename else "bin").lower()
-    return f"case-studies/{uuid.uuid4().hex}.{ext}"
+    return f"case-referrals/{uuid.uuid4().hex}.{ext}"
 
 
-class CaseStudy(models.Model):
-    """The social worker's official case study document for a child.
+class CaseReferral(models.Model):
+    """The social worker's official case referral document for a child.
     Uploaded by staff/admin, viewable by the assigned psychologist —
     the other half of the split-view document area."""
-    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="case_studies")
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="case_referrals")
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="case_studies_uploaded")
-    file = models.FileField(upload_to=case_study_upload_path)
+        related_name="case_referrals_uploaded")
+    file = models.FileField(upload_to=case_referral_upload_path)
     original_filename = models.CharField(max_length=255, blank=True)
     description = models.CharField(max_length=255, blank=True)
     extracted_text = models.TextField(blank=True)
@@ -231,7 +231,7 @@ class CaseStudy(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "tbl_case_study"
+        db_table = "tbl_case_referral"
         ordering = ["-created_at"]
 
 
