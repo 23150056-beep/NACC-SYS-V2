@@ -13,7 +13,7 @@ from activity.services import log_activity
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
     ClinicalInterviewRecord, ProblemEntry, PreAssessment,
-    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry, CaseStudy,
+    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry, CaseReferral,
     OpinionnaireInvite,
 )
 from clinical.serializers import (
@@ -21,7 +21,7 @@ from clinical.serializers import (
     ConsentRecordSerializer, ClinicalInterviewRecordSerializer,
     ProblemEntrySerializer, PreAssessmentSerializer,
     PsychologicalReportSerializer, RemarkNoteSerializer,
-    TreatmentPlanSerializer, ResultEntrySerializer, CaseStudySerializer,
+    TreatmentPlanSerializer, ResultEntrySerializer, CaseReferralSerializer,
     OpinionnaireInviteSerializer,
 )
 from clinical.services import extract_pdf_text
@@ -327,17 +327,17 @@ class PsychologicalReportViewSet(_ChildScopedClinicalViewSet):
                             filename=obj.original_filename or obj.file.name.rsplit("/", 1)[-1])
 
 
-class CaseStudyViewSet(viewsets.ModelViewSet):
+class CaseReferralViewSet(viewsets.ModelViewSet):
     """The social worker's side of the split-view document area:
     write admin/staff, read all three roles (psychologist scoped to
     assigned children)."""
     permission_classes = [IsAuthenticated]
     pagination_class = None
-    serializer_class = CaseStudySerializer
+    serializer_class = CaseReferralSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
-        qs = CaseStudy.objects.select_related("child", "uploaded_by")
+        qs = CaseReferral.objects.select_related("child", "uploaded_by")
         child_id = self.request.query_params.get("child")
         if child_id:
             if not str(child_id).isdigit():
@@ -349,7 +349,7 @@ class CaseStudyViewSet(viewsets.ModelViewSet):
 
     def _assert_can_write(self):
         if _role(self.request) not in (Role.ADMINISTRATOR, Role.STAFF):
-            raise PermissionDenied("Only social workers or administrators upload case studies.")
+            raise PermissionDenied("Only social workers or administrators upload case referrals.")
 
     def perform_create(self, serializer):
         self._assert_can_write()
@@ -361,7 +361,7 @@ class CaseStudyViewSet(viewsets.ModelViewSet):
                               original_filename=upload.name,
                               extracted_text=extracted)
         log_activity(self.request.user, ActivityLog.CREATED, ActivityLog.RECORD,
-                     entity_type="CaseStudy", entity_label=obj.child.fullname,
+                     entity_type="CaseReferral", entity_label=obj.child.fullname,
                      entity_id=obj.id, recipient=obj.child.assigned_psychologist)
 
     def perform_update(self, serializer):

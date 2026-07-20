@@ -77,6 +77,50 @@ class AvailabilityTest(SchedulingBase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.data), 1)
 
+    def test_rejects_overlapping_block_same_day(self):
+        # setUp block: Wednesday 09:00-12:00 — a 10:00-14:00 window overlaps it.
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post("/api/availability/", {
+            "weekday": 2, "start_time": "10:00", "end_time": "14:00", "capacity": 1}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Overlaps", str(resp.data))
+
+    def test_adjacent_block_same_day_is_allowed(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post("/api/availability/", {
+            "weekday": 2, "start_time": "12:00", "end_time": "15:00", "capacity": 1}, format="json")
+        self.assertEqual(resp.status_code, 201)
+
+    def test_same_window_on_other_day_is_allowed(self):
+        self._auth("p@racco1.gov.ph")
+        resp = self.client.post("/api/availability/", {
+            "weekday": 3, "start_time": "09:00", "end_time": "12:00", "capacity": 1}, format="json")
+        self.assertEqual(resp.status_code, 201)
+
+    def test_other_psychologist_may_share_the_window(self):
+        self._auth("o@racco1.gov.ph")
+        resp = self.client.post("/api/availability/", {
+            "weekday": 2, "start_time": "09:00", "end_time": "12:00", "capacity": 2}, format="json")
+        self.assertEqual(resp.status_code, 201)
+
+    def test_edit_cannot_create_overlap(self):
+        self._auth("p@racco1.gov.ph")
+        other = AvailabilityBlock.objects.create(
+            psychologist=self.psy, weekday=2, start_time="13:00", end_time="15:00")
+        resp = self.client.patch(f"/api/availability/{other.id}/",
+                                 {"start_time": "11:00"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Overlaps", str(resp.data))
+
+    def test_rejects_overlapping_dated_block(self):
+        self._auth("p@racco1.gov.ph")
+        first = self.client.post("/api/availability/", {
+            "date": "2026-08-05", "start_time": "09:00", "end_time": "12:00"}, format="json")
+        self.assertEqual(first.status_code, 201)
+        resp = self.client.post("/api/availability/", {
+            "date": "2026-08-05", "start_time": "11:00", "end_time": "13:00"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+
 
 class BookingTest(SchedulingBase):
     def _book(self, start, psychologist=None):

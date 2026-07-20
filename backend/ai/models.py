@@ -35,7 +35,7 @@ class AIJob(models.Model):
         ("doc_intelligence", "Report Document Intelligence"),
         ("remark_polish", "Remark Polishing"),
         ("census_narrative", "Census Narrative"),
-        ("case_study", "Case Study Summary"),
+        ("case_referral", "Case Referral Summary"),
     ]
 
     PENDING, ACCEPTED, EDITED, DISCARDED = "pending", "accepted", "edited", "discarded"

@@ -1,5 +1,5 @@
 """Tests for the blueprint additions: case tracker, baseline category,
-case-study sharing, and the QR opinionnaire flow."""
+case-referral sharing, and the QR opinionnaire flow."""
 import tempfile
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -10,7 +10,7 @@ from django.contrib.auth import get_user_model
 from accounts.models import Role
 from children.models import Child
 from clinical.models import (
-    AgencyFormTemplate, CaseStudy, OpinionnaireInvite, ResultEntry,
+    AgencyFormTemplate, CaseReferral, OpinionnaireInvite, ResultEntry,
 )
 
 User = get_user_model()
@@ -95,42 +95,42 @@ class CaseTrackerTest(BlueprintBase):
 
 
 @override_settings(MEDIA_ROOT=TEMP_MEDIA)
-class CaseStudyTest(BlueprintBase):
+class CaseReferralTest(BlueprintBase):
     def _pdf(self):
         import fitz
         doc = fitz.open()
-        doc.new_page().insert_text((72, 72), "Case study: family background and history.", fontsize=11)
-        return SimpleUploadedFile("case-study.pdf", doc.tobytes(), content_type="application/pdf")
+        doc.new_page().insert_text((72, 72), "Case referral: family background and history.", fontsize=11)
+        return SimpleUploadedFile("case-referral.pdf", doc.tobytes(), content_type="application/pdf")
 
-    def test_staff_uploads_case_study(self):
+    def test_staff_uploads_case_referral(self):
         self._auth("s@racco1.gov.ph")
-        resp = self.client.post("/api/case-studies/", {
+        resp = self.client.post("/api/case-referrals/", {
             "child": self.child.id, "file": self._pdf(),
-            "description": "Intake case study"}, format="multipart")
+            "description": "Intake case referral"}, format="multipart")
         self.assertEqual(resp.status_code, 201)
-        cs = CaseStudy.objects.get()
+        cs = CaseReferral.objects.get()
         self.assertEqual(cs.uploaded_by, self.staff)
         self.assertIn("family background", cs.extracted_text)
 
     def test_psychologist_cannot_upload_but_can_view_and_download(self):
         self._auth("s@racco1.gov.ph")
-        rid = self.client.post("/api/case-studies/", {
+        rid = self.client.post("/api/case-referrals/", {
             "child": self.child.id, "file": self._pdf()}, format="multipart").data["id"]
         self._auth("p@racco1.gov.ph")
-        self.assertEqual(self.client.post("/api/case-studies/", {
+        self.assertEqual(self.client.post("/api/case-referrals/", {
             "child": self.child.id, "file": self._pdf()}, format="multipart").status_code, 403)
-        listed = self.client.get(f"/api/case-studies/?child={self.child.id}").data
+        listed = self.client.get(f"/api/case-referrals/?child={self.child.id}").data
         self.assertEqual(len(listed), 1)
-        dl = self.client.get(f"/api/case-studies/{rid}/download/")
+        dl = self.client.get(f"/api/case-referrals/{rid}/download/")
         self.assertEqual(dl.status_code, 200)
         b"".join(dl.streaming_content)
 
     def test_unassigned_psychologist_sees_nothing(self):
         self._auth("s@racco1.gov.ph")
-        self.client.post("/api/case-studies/", {
+        self.client.post("/api/case-referrals/", {
             "child": self.child.id, "file": self._pdf()}, format="multipart")
         self._auth("o@racco1.gov.ph")
-        self.assertEqual(len(self.client.get("/api/case-studies/").data), 0)
+        self.assertEqual(len(self.client.get("/api/case-referrals/").data), 0)
 
 
 class OpinionnaireTest(BlueprintBase):

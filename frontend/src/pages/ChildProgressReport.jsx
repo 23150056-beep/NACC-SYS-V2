@@ -180,15 +180,15 @@ export default function ChildProgressReport() {
     } catch (err) { aiUnavailable(err); } finally { setAiBusy(false); }
   };
 
-  const aiSummarizeCaseStudy = (f) => {
+  const aiSummarizeCaseReferral = (f) => {
     setAiBusy(true);
-    api.post(`/ai/summarize-case-study/${f.id}/`)
+    api.post(`/ai/summarize-case-referral/${f.id}/`)
       .then(({ data: d }) => setAiModal({
         title: `AI summary draft — ${f.original_filename}`,
         draft: d.draft, disclaimer: d.disclaimer, editable: true,
         onConfirm: async (text) => {
           try {
-            await api.post(`/ai/confirm-case-study-summary/${f.id}/`, { text });
+            await api.post(`/ai/confirm-case-referral-summary/${f.id}/`, { text });
             toast.success('Summary confirmed');
             setAiModal(null); load();
           } catch (err) { aiUnavailable(err); }
@@ -357,20 +357,20 @@ export default function ChildProgressReport() {
         )}
       </Card>
 
-      {/* Case studies (social worker's side of the split view) */}
-      <Card eyebrow="Casework" title="Case study (social worker)" padding="0" style={{ marginBottom: 18 }}>
-        {(data.case_studies || []).length === 0 ? (
+      {/* Case referrals (social worker's side of the split view) */}
+      <Card eyebrow="Casework" title="Case referral (social worker)" padding="0" style={{ marginBottom: 18 }}>
+        {(data.case_referrals || []).length === 0 ? (
           <div style={{ padding: 18, fontSize: 13, color: 'var(--text-muted)' }}>
-            No case study uploaded yet. Social workers upload it from Results &amp; Reports.
+            No case referral uploaded yet. Social workers upload it from Results &amp; Reports.
           </div>
         ) : (
           <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {data.case_studies.map((f) => (
+            {data.case_referrals.map((f) => (
               <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: 'var(--ink-50)' }}>
                 <Icon name="folder-heart" size={18} style={{ color: 'var(--amber-500)' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.original_filename}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{f.description || 'Case study'} · {f.uploaded_by_name || '—'} · {(f.created_at || '').slice(0, 10)}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{f.description || 'Case referral'} · {f.uploaded_by_name || '—'} · {(f.created_at || '').slice(0, 10)}</div>
                   {f.ai_summary && (
                     <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--blue-50)', border: '1px solid var(--blue-100)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -384,14 +384,14 @@ export default function ChildProgressReport() {
                   )}
                 </div>
                 {canWrite && f.has_text && (
-                  <Button variant="ghost" onClick={() => aiSummarizeCaseStudy(f)} disabled={aiBusy}
+                  <Button variant="ghost" onClick={() => aiSummarizeCaseReferral(f)} disabled={aiBusy}
                           iconLeft={<Icon name="sparkles" size={15} />} className="racco-no-print">AI summary</Button>
                 )}
                 <Button variant="ghost" onClick={async () => {
                   try {
-                    const res = await api.get(`/case-studies/${f.id}/download/`, { responseType: 'blob' });
+                    const res = await api.get(`/case-referrals/${f.id}/download/`, { responseType: 'blob' });
                     const url = URL.createObjectURL(res.data);
-                    const a = document.createElement('a'); a.href = url; a.download = f.original_filename || 'case-study'; a.click();
+                    const a = document.createElement('a'); a.href = url; a.download = f.original_filename || 'case-referral'; a.click();
                     URL.revokeObjectURL(url);
                   } catch { toast.error('Could not download the file.'); }
                 }} iconLeft={<Icon name="download" size={15} />} className="racco-no-print">Download</Button>

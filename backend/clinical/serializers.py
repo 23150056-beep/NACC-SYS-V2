@@ -4,7 +4,7 @@ from django.utils import timezone
 from clinical.models import (
     InstrumentCatalog, AgencyFormTemplate, ConsentRecord,
     ClinicalInterviewRecord, ProblemEntry, PreAssessment,
-    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry, CaseStudy,
+    PsychologicalReport, RemarkNote, TreatmentPlan, ResultEntry, CaseReferral,
     OpinionnaireInvite,
 )
 
@@ -147,13 +147,13 @@ class PsychologicalReportSerializer(serializers.ModelSerializer):
         return f
 
 
-class CaseStudySerializer(serializers.ModelSerializer):
+class CaseReferralSerializer(serializers.ModelSerializer):
     child_name = serializers.CharField(source="child.fullname", read_only=True)
     uploaded_by_name = serializers.CharField(source="uploaded_by.fullname", read_only=True, default=None)
     has_text = serializers.SerializerMethodField()
 
     class Meta:
-        model = CaseStudy
+        model = CaseReferral
         fields = ["id", "child", "child_name", "uploaded_by", "uploaded_by_name",
                   "file", "original_filename", "description",
                   "ai_summary", "ai_summary_confirmed", "has_text", "created_at"]

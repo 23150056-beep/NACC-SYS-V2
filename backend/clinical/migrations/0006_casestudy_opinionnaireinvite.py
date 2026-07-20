@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
             name='CaseStudy',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('file', models.FileField(upload_to=clinical.models.case_study_upload_path)),
+                ('file', models.FileField(upload_to=clinical.models.case_referral_upload_path)),
                 ('original_filename', models.CharField(blank=True, max_length=255)),
                 ('description', models.CharField(blank=True, max_length=255)),
                 ('extracted_text', models.TextField(blank=True)),

@@ -302,28 +302,28 @@ class PrefetchBriefTest(AIBase):
         self.assertEqual(resp.data["queued"], [self.child.id])
 
 
-class CaseStudySummaryTest(AIBase):
+class CaseReferralSummaryTest(AIBase):
     def setUp(self):
         super().setUp()
-        from clinical.models import CaseStudy
+        from clinical.models import CaseReferral
         self.staff = User.objects.create_user(
             email="s@racco1.gov.ph", username="s", password="pass1234", role=self.staff_role)
-        self.cs = CaseStudy.objects.create(
-            child=self.child, uploaded_by=self.staff, file="case_studies/x.pdf",
+        self.cs = CaseReferral.objects.create(
+            child=self.child, uploaded_by=self.staff, file="case_referrals/x.pdf",
             extracted_text="Family background: the child lives with a foster family.")
 
     @patch("ai.services.get_ai_client", return_value=FakeClient("1. Background…"))
     def test_draft_saved_unconfirmed(self, _mock):
         self._enable()
         self._auth("p@racco1.gov.ph")
-        resp = self.client.post(f"/api/ai/summarize-case-study/{self.cs.id}/")
+        resp = self.client.post(f"/api/ai/summarize-case-referral/{self.cs.id}/")
         self.assertEqual(resp.status_code, 200)
         self.cs.refresh_from_db()
         self.assertEqual(self.cs.ai_summary, "1. Background…")
         self.assertFalse(self.cs.ai_summary_confirmed)
         job = AIJob.objects.get()
-        self.assertEqual(job.job_type, "case_study")
-        self.assertEqual(job.input_ref, f"casestudy:{self.cs.id}")
+        self.assertEqual(job.job_type, "case_referral")
+        self.assertEqual(job.input_ref, f"casereferral:{self.cs.id}")
 
     @patch("ai.services.get_ai_client", return_value=FakeClient())
     def test_scoped_to_assigned_psychologist(self, _mock):
@@ -331,7 +331,7 @@ class CaseStudySummaryTest(AIBase):
         other = User.objects.create_user(
             email="o@racco1.gov.ph", username="o", password="pass1234", role=self.psy_role)
         self._auth("o@racco1.gov.ph")
-        resp = self.client.post(f"/api/ai/summarize-case-study/{self.cs.id}/")
+        resp = self.client.post(f"/api/ai/summarize-case-referral/{self.cs.id}/")
         self.assertEqual(resp.status_code, 404)
 
     def test_no_text_400(self):
@@ -340,15 +340,15 @@ class CaseStudySummaryTest(AIBase):
         self.cs.save()
         with patch("ai.services.get_ai_client", return_value=FakeClient()):
             self._auth("p@racco1.gov.ph")
-            resp = self.client.post(f"/api/ai/summarize-case-study/{self.cs.id}/")
+            resp = self.client.post(f"/api/ai/summarize-case-referral/{self.cs.id}/")
         self.assertEqual(resp.status_code, 400)
 
     @patch("ai.services.get_ai_client", return_value=FakeClient())
     def test_confirm_flow(self, _mock):
         self._enable()
         self._auth("p@racco1.gov.ph")
-        self.client.post(f"/api/ai/summarize-case-study/{self.cs.id}/")
-        resp = self.client.post(f"/api/ai/confirm-case-study-summary/{self.cs.id}/",
+        self.client.post(f"/api/ai/summarize-case-referral/{self.cs.id}/")
+        resp = self.client.post(f"/api/ai/confirm-case-referral-summary/{self.cs.id}/",
                                 {"text": "Edited case summary."}, format="json")
         self.assertEqual(resp.status_code, 200)
         self.cs.refresh_from_db()
@@ -359,7 +359,7 @@ class CaseStudySummaryTest(AIBase):
     def test_staff_cannot_confirm(self, _mock):
         self._enable()
         self._auth("s@racco1.gov.ph")
-        resp = self.client.post(f"/api/ai/confirm-case-study-summary/{self.cs.id}/",
+        resp = self.client.post(f"/api/ai/confirm-case-referral-summary/{self.cs.id}/",
                                 {"text": "x"}, format="json")
         self.assertEqual(resp.status_code, 403)
 
