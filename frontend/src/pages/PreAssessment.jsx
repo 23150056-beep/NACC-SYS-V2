@@ -328,14 +328,18 @@ export default function PreAssessment() {
 
 function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError }) {
   const toast = useToast();
-  const [form, setForm] = useState({ template: '', signer_name: '', signer_relationship: '', status: 'signed', fileObj: null });
+  const [form, setForm] = useState({ template: '', signer_name: '', signer_relationship: '', fileObj: null });
   const [preview, setPreview] = useState(null); // { url, type, title }
   const [busy, setBusy] = useState(false);
   const tpl = templates.find((t) => String(t.id) === String(form.template));
 
+  // Status is derived, never picked: an attached scan of the signed paper is
+  // what makes a consent "signed"; without it the record stays pending.
+  const derivedStatus = form.fileObj ? 'signed' : 'pending';
+
   const recordNew = async () => {
     setError('');
-    if (!form.signer_name.trim()) { setError('Enter the signer’s name.'); return; }
+    if (!form.signer_name.trim()) { setError('Enter who signed the consent.'); return; }
     setBusy(true);
     try {
       const fd = new FormData();
@@ -343,12 +347,12 @@ function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError
       if (form.template) fd.append('template', form.template);
       fd.append('signer_name', form.signer_name);
       fd.append('signer_relationship', form.signer_relationship);
-      fd.append('status', form.status);
+      fd.append('status', derivedStatus);
       if (form.fileObj) fd.append('scan', form.fileObj);
       const { data } = await api.post('/consents/', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       await onRefresh();
       if (data.status === 'signed') onLinked(data.id);
-      else setError('Consent recorded but not signed — a signed consent is required to complete the pre-assessment.');
+      else setError('Consent recorded as Pending — upload the scanned signed form to record a Signed consent and continue.');
     } catch (err) {
       setError(JSON.stringify(err.response?.data || 'Could not record consent.'));
     } finally { setBusy(false); }
@@ -368,7 +372,7 @@ function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError
   return (
     <Card eyebrow="Step 2" title={`Consent — ${child.fullname}`} padding="22px">
       <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 14px' }}>
-        The agency&apos;s consent document is embedded below — read it with the guardian, record the signed paper consent, and attach a scan if available.
+        The agency&apos;s consent document is embedded below — read it with the guardian, then upload the scanned signed paper. The consent is marked Signed automatically once the scan is attached.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <FormField label="Consent form template" hint="Your agency-authored consent form.">
@@ -384,18 +388,20 @@ function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError
           </div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <FormField label="Signer name" required><Input value={form.signer_name} onChange={(e) => setForm({ ...form, signer_name: e.target.value })} /></FormField>
+          <FormField label="Signed by" required><Input value={form.signer_name} onChange={(e) => setForm({ ...form, signer_name: e.target.value })} placeholder="Guardian’s full name" /></FormField>
           <FormField label="Relationship to child"><Input value={form.signer_relationship} onChange={(e) => setForm({ ...form, signer_relationship: e.target.value })} placeholder="e.g. Foster mother" /></FormField>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <FormField label="Status" required>
-            <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-              <option value="signed">Signed</option>
-              <option value="pending">Pending</option>
-              <option value="declined">Declined</option>
-            </Select>
+          <FormField label="Status" hint={derivedStatus === 'signed'
+            ? 'Set automatically — the signed scan is attached.'
+            : 'Set automatically once the scanned signed form is uploaded.'}>
+            <div style={{ display: 'flex', alignItems: 'center', height: 'var(--field-h)' }}>
+              {derivedStatus === 'signed'
+                ? <Badge tone="success" dot>Signed</Badge>
+                : <Badge tone="amber" dot>Pending — awaiting signed form</Badge>}
+            </div>
           </FormField>
-          <FormField label="Scanned signed form" hint="Optional — PDF or photo of the signed paper.">
+          <FormField label="Scanned signed form" hint="PDF or photo of the signed paper — uploading it marks the consent as Signed.">
             <FileUpload file={form.fileObj} accept=".pdf,.jpg,.jpeg,.png"
               onChange={(f) => setForm({ ...form, fileObj: f })} />
           </FormField>
