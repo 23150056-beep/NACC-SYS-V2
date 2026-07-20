@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
-import { Card, Button, Badge, Input, Select, FormField, Alert, EmptyState, Avatar, Icon, iconBtn, hoverLift, PAGE } from '../ui';
+import { Card, Button, Badge, Input, Select, FormField, FileUpload, Alert, EmptyState, Avatar, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 import { PA_STATUSES, PA_STATUS_TONES } from '../config/caseData';
 import { printBlankForm } from '../utils/printForm';
 import InstrumentFormDrawer, { EMPTY_INSTRUMENT } from '../components/InstrumentFormDrawer';
@@ -396,7 +396,8 @@ function ConsentStep({ child, consents, templates, onLinked, onRefresh, setError
             </Select>
           </FormField>
           <FormField label="Scanned signed form" hint="Optional — PDF or photo of the signed paper.">
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setForm({ ...form, fileObj: e.target.files?.[0] || null })} style={{ fontSize: 13, fontFamily: 'var(--font-sans)' }} />
+            <FileUpload file={form.fileObj} accept=".pdf,.jpg,.jpeg,.png"
+              onChange={(f) => setForm({ ...form, fileObj: f })} />
           </FormField>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

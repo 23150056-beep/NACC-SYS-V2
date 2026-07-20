@@ -1,6 +1,6 @@
 // RACCO I Design System — primitives ported from the Claude Design workspace kit.
 // Token-driven inline styles; one import surface for every screen.
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import * as Lucide from 'lucide-react';
 
 /* ----------------------------- Icon ----------------------------- */
@@ -289,6 +289,54 @@ export function Input({ value, onChange, placeholder, type = 'text', size = 'md'
         {...rest}
       />
       {trailing && <span style={{ display: 'inline-flex', color: 'var(--text-faint)', flex: 'none' }}>{trailing}</span>}
+    </div>
+  );
+}
+
+/* ----------------------------- FileUpload ----------------------------- */
+function humanFileSize(bytes) {
+  if (bytes == null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+const FILE_TYPE_ICONS = { pdf: 'file-text', doc: 'file-text', docx: 'file-text', jpg: 'image', jpeg: 'image', png: 'image' };
+
+/* Styled replacement for the bare <input type="file">: an explicit upload
+ * button, then a green "attached" preview chip (file-type icon + name + size)
+ * so it's obvious at a glance that the file is in place before submitting. */
+export function FileUpload({ file, onChange, accept = '', buttonLabel = 'Choose file', style = {} }) {
+  const inputRef = useRef(null);
+  const pick = () => inputRef.current?.click();
+  const ext = file && file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...style }}>
+      <input
+        ref={inputRef} type="file" accept={accept} style={{ display: 'none' }}
+        onChange={(e) => { onChange(e.target.files?.[0] || null); e.target.value = ''; }}
+      />
+      {!file ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', border: '1.5px dashed var(--border-strong)', borderRadius: 'var(--radius-md)', background: 'var(--ink-50)' }}>
+          <Icon name="file-up" size={20} style={{ color: 'var(--text-faint)' }} />
+          <span style={{ flex: 1, fontSize: 13, color: 'var(--text-muted)' }}>No file selected yet.</span>
+          <Button variant="secondary" size="sm" onClick={pick} iconLeft={<Icon name="upload" size={15} />}>{buttonLabel}</Button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', border: '1px solid var(--success-100)', borderRadius: 'var(--radius-md)', background: 'var(--success-50)' }}>
+          <Icon name={FILE_TYPE_ICONS[ext] || 'file'} size={20} style={{ color: 'var(--success-600)' }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, color: 'var(--success-700)' }}>
+              <Icon name="check-circle-2" size={13} />
+              Attached{file.size ? ` · ${humanFileSize(file.size)}` : ''} — ready to upload
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" onClick={pick} iconLeft={<Icon name="refresh-cw" size={14} />}>Replace</Button>
+          <button type="button" title="Remove file" onClick={() => onChange(null)} style={iconBtn('var(--red-500)', 28)}>
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
