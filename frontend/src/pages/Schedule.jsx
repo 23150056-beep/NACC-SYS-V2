@@ -7,7 +7,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Card, Button, Badge, Input, Select, FormField, Alert, Icon, iconBtn, PAGE } from '../ui';
+import { Card, Button, Badge, Input, Select, FormField, Alert, Avatar, Icon, iconBtn, hoverLift, PAGE } from '../ui';
 
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales: { 'en-US': enUS } });
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -37,6 +37,7 @@ export default function Schedule() {
   const [brief, setBrief] = useState(null);      // { draft, generated_at, job_id, childName }
   const [briefBusy, setBriefBusy] = useState(false);
   const [slotHints, setSlotHints] = useState(null);
+  const [openPsy, setOpenPsy] = useState(null); // { id, name } — full-page availability view (admin/staff)
 
   const load = () => {
     api.get('/appointments/').then((r) => setAppointments(r.data)).catch(() => {});
@@ -72,6 +73,31 @@ export default function Schedule() {
   }), []);
 
   const myBlocks = isPsych ? blocks.filter((b) => String(b.psychologist) === String(user?.id)) : blocks;
+
+  // Admin/staff see one container per psychologist instead of a flat list of
+  // every block — click a container to open that psychologist's full page.
+  const psyGroups = useMemo(() => {
+    if (isPsych) return [];
+    const map = new Map();
+    for (const b of blocks) {
+      const key = String(b.psychologist);
+      if (!map.has(key)) map.set(key, { id: b.psychologist, name: b.psychologist_name || 'Unassigned', blocks: [] });
+      map.get(key).blocks.push(b);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [blocks, isPsych]);
+
+  const daysLabel = (bs) => {
+    const wd = [...new Set(bs.filter((b) => b.date == null).map((b) => b.weekday))].sort((a, b) => a - b);
+    const parts = wd.map((i) => WEEKDAYS[i].slice(0, 3));
+    if (bs.some((b) => b.date != null)) parts.push('Dates');
+    return parts.join(' · ');
+  };
+
+  const openPsyBlocks = openPsy ? blocks.filter((b) => String(b.psychologist) === String(openPsy.id)) : [];
+  const openPsyWeeklySlots = openPsyBlocks.filter((b) => b.date == null).reduce((s, b) => s + (b.capacity || 0), 0);
+  const openPsyDated = openPsyBlocks.filter((b) => b.date != null)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
   const book = async (e) => {
     e.preventDefault();
@@ -184,6 +210,91 @@ export default function Schedule() {
 
   return (
     <div style={{ ...PAGE, position: 'relative' }}>
+      {openPsy ? (
+        <>
+          {/* Full-page availability view for one psychologist */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <Button variant="ghost" onClick={() => setOpenPsy(null)} iconLeft={<Icon name="arrow-left" size={17} />}>Back to Calendar</Button>
+            {role === 'Administrator' && (
+              <Button variant="secondary" iconLeft={<Icon name="clock" size={16} />}
+                onClick={() => { setError(''); setBlockForm({ mode: 'weekly', weekdays: [], date: '', start_time: '09:00', end_time: '12:00', capacity: 2, psychologist: openPsy.id }); }}>
+                Add Availability
+              </Button>
+            )}
+          </div>
+          <Card padding="22px" style={{ marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <Avatar name={openPsy.name} tone="red" size="lg" />
+              <div>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: 'var(--text-strong)' }}>{openPsy.name}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                  {openPsyBlocks.length} availability block{openPsyBlocks.length === 1 ? '' : 's'}
+                  {' · '}{openPsyWeeklySlots} bookable slot{openPsyWeeklySlots === 1 ? '' : 's'} per week
+                  {openPsyDated.length > 0 ? ` · ${openPsyDated.length} single-date block${openPsyDated.length === 1 ? '' : 's'}` : ''}
+                </div>
+              </div>
+            </div>
+          </Card>
+          <Card eyebrow="Psychologist availability" title={`Weekly schedule — ${openPsy.name}`} padding="20px">
+            {openPsyBlocks.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No availability blocks for this psychologist yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {WEEKDAYS.map((d, i) => {
+                  const dayBlocks = openPsyBlocks.filter((b) => b.date == null && b.weekday === i)
+                    .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
+                  if (dayBlocks.length === 0) return null;
+                  return (
+                    <div key={d}>
+                      <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>{d}s</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {dayBlocks.map((b) => (
+                          <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
+                            <Icon name="clock" size={16} style={{ color: 'var(--blue-600)' }} />
+                            <span style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>
+                              {String(b.start_time).slice(0, 5)}–{String(b.end_time).slice(0, 5)}
+                            </span>
+                            <Badge tone="neutral" size="sm">{b.capacity} slot{b.capacity === 1 ? '' : 's'}</Badge>
+                            {role === 'Administrator' && (
+                              <>
+                                <button title="Edit" onClick={() => openEditBlock(b)} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={14} /></button>
+                                <button title="Remove" onClick={() => removeBlock(b)} style={iconBtn('var(--red-500)')}><Icon name="trash-2" size={14} /></button>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {openPsyDated.length > 0 && (
+                  <div>
+                    <div className="racco-eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>Specific dates</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {openPsyDated.map((b) => (
+                        <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
+                          <Icon name="calendar" size={16} style={{ color: 'var(--blue-600)' }} />
+                          <span style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>
+                            {b.date} · {String(b.start_time).slice(0, 5)}–{String(b.end_time).slice(0, 5)}
+                          </span>
+                          <Badge tone="neutral" size="sm">{b.capacity} slot{b.capacity === 1 ? '' : 's'}</Badge>
+                          {role === 'Administrator' && (
+                            <>
+                              <button title="Edit" onClick={() => openEditBlock(b)} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={14} /></button>
+                              <button title="Remove" onClick={() => removeBlock(b)} style={iconBtn('var(--red-500)')}><Icon name="trash-2" size={14} /></button>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </>
+      ) : (
+        <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <Button variant="ghost" onClick={() => navigate('/')} iconLeft={<Icon name="arrow-left" size={17} />}>Back to Dashboard</Button>
@@ -232,7 +343,7 @@ export default function Schedule() {
           <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
             {isPsych ? 'No availability yet — add the times you accept bookings.' : 'No availability blocks defined yet.'}
           </div>
-        ) : (
+        ) : isPsych ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {myBlocks.map((b) => (
               <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-50)', border: '1px solid var(--border)' }}>
@@ -241,20 +352,41 @@ export default function Schedule() {
                   <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)' }}>
                     {b.date || WEEKDAYS[b.weekday]}s · {String(b.start_time).slice(0, 5)}–{String(b.end_time).slice(0, 5)}
                   </span>
-                  {!isPsych && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}> — {b.psychologist_name}</span>}
                 </div>
                 <Badge tone="neutral" size="sm">{b.capacity} slot{b.capacity === 1 ? '' : 's'}</Badge>
-                {(isPsych || role === 'Administrator') && (
-                  <>
-                    <button title="Edit" onClick={() => openEditBlock(b)} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={14} /></button>
-                    <button title="Remove" onClick={() => removeBlock(b)} style={iconBtn('var(--red-500)')}><Icon name="trash-2" size={14} /></button>
-                  </>
-                )}
+                <button title="Edit" onClick={() => openEditBlock(b)} style={iconBtn('var(--blue-600)')}><Icon name="pencil" size={14} /></button>
+                <button title="Remove" onClick={() => removeBlock(b)} style={iconBtn('var(--red-500)')}><Icon name="trash-2" size={14} /></button>
               </div>
             ))}
           </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 12 }}>
+              Grouped per psychologist — open a card to see and manage their full schedule.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+              {psyGroups.map((g) => (
+                <div key={g.id} role="button" tabIndex={0}
+                  onClick={() => setOpenPsy({ id: g.id, name: g.name })}
+                  onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenPsy({ id: g.id, name: g.name }); } }}
+                  {...hoverLift()}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: 'var(--surface)', boxShadow: 'var(--shadow-xs)', cursor: 'pointer', transition: 'var(--transition-base)' }}>
+                  <Avatar name={g.name} tone="red" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {g.blocks.length} block{g.blocks.length === 1 ? '' : 's'}{daysLabel(g.blocks) ? ` · ${daysLabel(g.blocks)}` : ''}
+                    </div>
+                  </div>
+                  <Icon name="chevron-right" size={16} style={{ color: 'var(--text-faint)' }} />
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </Card>
+      </>
+      )}
 
       {/* Booking drawer */}
       {booking && (
